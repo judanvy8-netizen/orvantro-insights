@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ko" data-orvantro-site="orvantro-insights">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ORVANTRO Insights — 키 설정 없이 방문자·국가·재방문·전망을 보는 1st-party 분석 콘솔.">
+  <meta name="theme-color" content="#061018">
+  <title>ORVANTRO Insights — 전망 · 방문 분석</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preload" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./insights.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand">ORVANTRO <span>· 오르반트로</span></div>
+        <div class="brand-sub">Insights · 1st-party 방문 분석 · 전망 콘솔</div>
+      </div>
+      <div class="top-links">
+        <span class="pill">BETA · 키 설정 불필요</span>
+        <a class="link-chip" href="https://orvantro.com/">공식 홈</a>
+        <a class="link-chip" href="https://judanvy8-netizen.github.io/orvantro/">Hub</a>
+      </div>
+    </header>
+
+    <section class="hero" aria-label="Insights 소개">
+      <div class="hero-brand">ORVANTRO</div>
+      <h1>Insights — 키 없이, 지금을 보고 전망을 읽습니다</h1>
+      <p>
+        모든 ORVANTRO 사이트의 방문자·페이지뷰·고유/재방문·국가·경로·UTM을
+        브라우저 1st-party 저장소와 공개 집계로 모읍니다.
+        Amplitude/GA4 시크릿을 붙여 넣을 필요가 없습니다. 단기 전망은 추세 기반 <strong>추정</strong>입니다.
+      </p>
+      <div class="notice">
+        수집은 각 사이트의 <code>orvantro-analytics.js</code>가 IndexedDB·localStorage 링과
+        Abacus 공개 카운터(키 없음)에 기록합니다. 이 콘솔은 같은 github.io 출처의 1st-party 이벤트와
+        공개 집계를 우선 표시합니다. 피드가 비어 있으면 안내 후, 원할 때만 샘플을 켭니다.
+      </div>
+    </section>
+
+    <div class="empty-guide" id="emptyGuide" hidden>
+      <strong>아직 이 브라우저에 수집된 이벤트가 없습니다.</strong><br>
+      다른 ORVANTRO 페이지를 열어 첫 이벤트를 만드세요 —
+      <a href="https://judanvy8-netizen.github.io/orvantro/" target="_blank" rel="noopener">Hub</a>,
+      <a href="https://judanvy8-netizen.github.io/marginkit-pro-beta/" target="_blank" rel="noopener">MarginKit</a>,
+      <a href="https://judanvy8-netizen.github.io/feeroi/" target="_blank" rel="noopener">Feeroi</a>,
+      <a href="https://judanvy8-netizen.github.io/sellerbill/" target="_blank" rel="noopener">SellerBill</a>
+      — 같은 github.io 출처면 여기에 바로 쌓입니다. 아래는 공개 Abacus 집계와(원하면) 샘플입니다.
+    </div>
+
+    <div class="filters" aria-label="필터">
+      <div class="field">
+        <label for="filterRange">기간</label>
+        <select id="filterRange">
+          <option value="7">최근 7일</option>
+          <option value="14" selected>최근 14일</option>
+          <option value="30">최근 30일</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="filterProduct">제품</label>
+        <select id="filterProduct"></select>
+      </div>
+      <div class="field">
+        <label for="filterCountry">국가</label>
+        <select id="filterCountry">
+          <option value="all">전체 국가</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button type="button" class="btn btn-ghost" id="btnRefresh" style="width:100%">새로고침</button>
+      </div>
+    </div>
+
+    <div class="actions-row">
+      <button type="button" class="btn btn-primary" id="btnLive">라이브 데이터</button>
+      <button type="button" class="btn btn-ghost" id="btnUseSample">샘플 보기</button>
+      <button type="button" class="btn btn-ghost" id="btnImport">JSON 가져오기 (선택)</button>
+      <button type="button" class="btn btn-ghost" id="btnClearImport">가져오기 지우기</button>
+    </div>
+    <p class="status-line" id="statusLine" role="status">불러오는 중…</p>
+
+    <div class="abacus-strip" id="abacusStrip" aria-label="공개 집계"></div>
+
+    <section class="kpi-grid" aria-label="핵심 지표">
+      <article class="kpi">
+        <div class="label">고유 방문자</div>
+        <div class="value" id="kpiVisitors">—</div>
+        <div class="hint" id="kpiVisitorsHint">로딩</div>
+      </article>
+      <article class="kpi">
+        <div class="label">페이지뷰</div>
+        <div class="value" id="kpiPageviews">—</div>
+        <div class="hint" id="kpiPageviewsHint">로딩</div>
+      </article>
+      <article class="kpi">
+        <div class="label">재방문율</div>
+        <div class="value" id="kpiReturning">—</div>
+        <div class="hint" id="kpiReturningHint">unique vs returning</div>
+      </article>
+      <article class="kpi">
+        <div class="label">평균 참여</div>
+        <div class="value" id="kpiEngage">—</div>
+        <div class="hint" id="kpiEngageHint">heartbeat</div>
+      </article>
+    </section>
+
+    <div class="grid-2">
+      <section class="panel" aria-label="일별 추세">
+        <h2>일별 추세 · 전망</h2>
+        <p class="lead">실선은 관측, 점선·황색은 향후 7–14일 <span class="est-tag">추정</span> 입니다.</p>
+        <canvas class="chart" id="trendChart" aria-hidden="true"></canvas>
+        <div class="chart-empty" id="trendEmpty">표시할 추세가 없습니다. 기간·필터를 바꿔 보세요.</div>
+      </section>
+      <section class="panel outlook" aria-label="전망 노트">
+        <h2>Outlook / 전망</h2>
+        <p class="lead">지표 기반 정성 노트. 예측은 단순 선형 추세이며 확정이 아닙니다.</p>
+        <ul class="outlook-list" id="outlookList"></ul>
+      </section>
+    </div>
+
+    <div class="grid-3">
+      <section class="panel" aria-label="제품별 트래픽">
+        <h2>제품별 트래픽</h2>
+        <p class="lead">사이트(퍼널)별 페이지뷰</p>
+        <div class="bars" id="siteBars"></div>
+      </section>
+      <section class="panel" aria-label="국가·지역">
+        <h2>국가 / 지역 맵</h2>
+        <p class="lead">클라이언트 IP 기반 대략 위치</p>
+        <div class="geo-map" id="geoMap"></div>
+        <div class="bars" id="countryBars"></div>
+      </section>
+      <section class="panel" aria-label="전망 수치">
+        <h2>전망 수치표</h2>
+        <p class="lead">일별 예상 페이지뷰 (추정)</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>날짜</th><th>예상 PV</th></tr></thead>
+            <tbody id="forecastTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="grid-2-eq">
+      <section class="panel" aria-label="경로 퍼널">
+        <h2>경로 퍼널</h2>
+        <p class="lead">방문 경로(path) Top 순위</p>
+        <div class="funnel" id="pathFunnel"></div>
+      </section>
+      <section class="panel" aria-label="리퍼러·UTM">
+        <h2>리퍼러 / UTM</h2>
+        <p class="lead">유입 출처와 캠페인 파라미터</p>
+        <div class="bars" id="refBars"></div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>UTM source</th><th>medium</th><th>campaign</th><th>횟수</th></tr></thead>
+            <tbody id="utmTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <div class="grid-2-eq">
+      <section class="panel" aria-label="참여도">
+        <h2>참여도 · 디바이스</h2>
+        <p class="lead">하트비트 체류와 디바이스 분포</p>
+        <div class="bars" id="deviceBars"></div>
+        <div class="table-wrap" style="margin-top:12px">
+          <table>
+            <thead><tr><th>구간</th><th>이벤트</th><th>비율</th></tr></thead>
+            <tbody id="engageTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel" aria-label="고유·중복 체크">
+        <h2>고유 탐지 상세</h2>
+        <p class="lead">visitor id(localStorage) + firstSeen. 같은 브라우저 재방문은 returning.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>제품</th><th>PV</th><th>고유</th><th>신규</th><th>재방문</th><th>재방문율</th></tr>
+            </thead>
+            <tbody id="uniqTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-bottom:14px" aria-label="선택적 JSON">
+      <h2>선택 · JSON 가져오기</h2>
+      <p class="lead">
+        운영상 필요하면 링 버퍼/내보내기 JSON을 붙여 넣을 수 있습니다.
+        <strong>Amplitude API Secret / GA4 키는 필요하지 않으며 UI에도 없습니다.</strong>
+      </p>
+      <div class="import-box">
+        <div class="field">
+          <label for="importJson">JSON 붙여넣기 (선택)</label>
+          <textarea id="importJson" placeholder='[{"t":1710000000000,"type":"orvantro_pageview","site":"feeroi","returning":false,"country_code":"KR"}]'></textarea>
+        </div>
+        <p class="help-note">
+          기본 경로는 1st-party 저장소 + Abacus 공개 집계입니다. 키를 붙여 넣는 단계는 없습니다.
+        </p>
+      </div>
+    </section>
+
+    <section class="feedback" id="feedback" aria-label="베타 피드백">
+      <h2>베타 피드백</h2>
+      <p class="lead">Insights 전망·지표가 유용했는지 알려 주세요. 메일 앱이 열립니다.</p>
+      <form onsubmit="return orvantroSubmitFeedback(this)">
+        <div class="grid">
+          <div class="field">
+            <label for="ov-product">제품</label>
+            <input id="ov-product" name="product" value="ORVANTRO Insights" readonly>
+          </div>
+          <div class="field">
+            <label for="ov-rating">만족도</label>
+            <select id="ov-rating" name="rating" required>
+              <option value="">선택</option>
+              <option>매우 만족</option>
+              <option>만족</option>
+              <option>보통</option>
+              <option>아쉬움</option>
+              <option>개선 필요</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ov-email">회신 이메일 (선택)</label>
+            <input id="ov-email" name="email" type="email" placeholder="you@example.com">
+          </div>
+          <div class="field full">
+            <label for="ov-body">피드백</label>
+            <textarea id="ov-body" name="body" required placeholder="전망 모듈, 보고 싶은 지표, 버그 등"></textarea>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary">메일로 보내기</button>
+          <span class="hint">Made by ORVANTRO (오르반트로) · 실제 결제 없음</span>
+        </div>
+      </form>
+    </section>
+
+    <footer class="foot">
+      <span class="made">Made by ORVANTRO (오르반트로)</span>
+      <span>
+        <a href="https://orvantro.com/">orvantro.com</a> ·
+        <a href="mailto:judanvy8@gmail.com">judanvy8@gmail.com</a>
+      </span>
+    </footer>
+  </div>
+
+  <script>window.ORVANTRO_ANALYTICS = { site: 'orvantro-insights' };</script>
+  <script src="./orvantro-analytics.js" defer></script>
+  <script src="./insights.js" defer></script>
+</body>
+</html>
