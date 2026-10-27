@@ -123,5 +123,28 @@ const row = (extra = {}) => ({ t: Date.now() - 1000, type: 'orvantro_pageview', 
     assert.equal(e.OrvantroAnalytics.isEnabled(), true); assert.equal(e.nodes.get('kpiPageviews').textContent, '1');
     e.nodes.get('btnDisableLocal').handlers.click(); assert.equal(e.OrvantroAnalytics.isEnabled(), false); assert.equal(e.net.length, 0);
   });
+  await check('unified Suite navigation does not send users back to retired products', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    assert.ok(html.includes('href="https://judanvy8-netizen.github.io/marginkit-pro-beta/">MarginKit Suite</a>'));
+    assert.doesNotMatch(html, /href="https:\/\/judanvy8-netizen\.github\.io\/(?:feeroi|sellerbill|markit-pro-beta)\//);
+  });
+  await check('historical product IDs stay separate and are labeled as earlier records', () => {
+    const e = environment(); loadTracker(e); const t = loadInsights(e);
+    t.state.events = t.normalizeImported(['feeroi', 'sellerbill', 'markit-pro-beta', 'marginkit-pro-beta'].map(site => row({ site })));
+    t.render();
+    assert.equal(t.state.events.map(event => event.site).join(','), 'feeroi,sellerbill,markit-pro-beta,marginkit-pro-beta');
+    const agg = t.aggregate(t.state.events); assert.equal(Object.keys(agg.bySite).length, 4);
+    assert.ok(e.nodes.get('siteBars').innerHTML.includes('이전 FeeROI 기록'));
+    assert.ok(e.nodes.get('siteBars').innerHTML.includes('MarginKit Suite'));
+  });
+  await check('visible contact and feedback use studio email without URL query or fragment', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    assert.ok(html.includes('href="mailto:orvantro@gmail.com">orvantro@gmail.com</a>'));
+    assert.ok(!html.includes('judanvy8@gmail.com')); assert.ok(!insights.includes('judanvy8@gmail.com'));
+    const e = environment(); e.FormData = class { get(key) { return { product: 'Insights', rating: '만족', body: '테스트', email: '' }[key]; } };
+    loadInsights(e); e.orvantroSubmitFeedback({});
+    assert.ok(e.location.href.startsWith('mailto:orvantro@gmail.com?subject='));
+    assert.ok(!decodeURIComponent(e.location.href).includes('SECRET'));
+  });
   console.log(`SUMMARY ${passed}/${passed} passed`);
 })().catch(e => { console.error(e); process.exitCode = 1; });

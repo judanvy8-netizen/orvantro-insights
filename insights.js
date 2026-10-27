@@ -2,12 +2,12 @@
   'use strict';
 
   var PRODUCTS = [
-    { id: 'all', label: '전체 제품' },
-    { id: 'orvantro', label: 'ORVANTRO Hub' },
-    { id: 'marginkit-pro-beta', label: 'MarginKit' },
-    { id: 'markit-pro-beta', label: 'Markit / MarginKit Ent.' },
-    { id: 'feeroi', label: 'Feeroi' },
-    { id: 'sellerbill', label: 'SellerBill' },
+    { id: 'all', label: '전체 기록' },
+    { id: 'orvantro', label: 'ORVANTRO 홈' },
+    { id: 'marginkit-pro-beta', label: 'MarginKit Suite' },
+    { id: 'markit-pro-beta', label: '이전 Markit / Enterprise 기록' },
+    { id: 'feeroi', label: '이전 FeeROI 기록' },
+    { id: 'sellerbill', label: '이전 SellerBill 기록' },
     { id: 'orvantro-insights', label: 'Insights' }
   ];
 
@@ -313,7 +313,7 @@
 
     var sites = Object.keys(agg.bySite).sort(function (a, b) { return agg.bySite[b] - agg.bySite[a]; });
     if (sites.length) {
-      notes.push({ title: '제품 퍼널', body: '트래픽 1위는 ' + productLabel(sites[0]) + '입니다. Hub→제품 전환과 교차 링크를 점검하세요.' });
+      notes.push({ title: '제품별 기록', body: '현재 데이터의 페이지뷰 1위는 ' + productLabel(sites[0]) + '입니다. 통합 이전 제품 기록은 별도로 표시됩니다.' });
     }
 
     var refs = Object.keys(agg.byRef).sort(function (a, b) { return agg.byRef[b] - agg.byRef[a]; });
@@ -682,7 +682,7 @@
       '제품: ' + product + '\n만족도: ' + rating + '\n회신 이메일: ' + (email || '(없음)') +
       '\n\n피드백:\n' + body + '\n\n— ' + location.origin + location.pathname
     );
-    window.location.href = 'mailto:judanvy8@gmail.com?subject=' + subject + '&body=' + text;
+    window.location.href = 'mailto:orvantro@gmail.com?subject=' + subject + '&body=' + text;
     return false;
   };
 
