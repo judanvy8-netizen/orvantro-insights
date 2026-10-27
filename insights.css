@@ -275,6 +275,8 @@ a:hover { text-decoration: underline; }
   transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
 }
 .btn:active { opacity: 0.9; } /* no scaleX / scale crush */
+.btn:disabled { opacity: 0.45; cursor: default; }
+:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
 .btn-primary {
   background: linear-gradient(135deg, #2ec4b6, #1f9aa8);
   color: #042018;

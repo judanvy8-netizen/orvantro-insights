@@ -14,7 +14,7 @@
   var state = {
     mode: 'empty', // empty | live | imported | sample
     events: [],
-    abacus: {},
+    imported: [],
     forceSample: false,
     filters: { range: 14, product: 'all', country: 'all' }
   };
@@ -82,37 +82,38 @@
   }
 
   function normalizeImported(raw) {
-    if (!raw) return [];
-    var list = Array.isArray(raw) ? raw : (raw.events || raw.data || []);
-    if (!Array.isArray(list)) return [];
-    return list.map(function (e) {
+    var list = Array.isArray(raw) ? raw : (raw && (raw.events || raw.data));
+    if (!Array.isArray(list) || list.length > 10000) throw new Error('Invalid event list');
+    function text(v, max) { return typeof v === 'string' ? v.slice(0, max || 160) : ''; }
+    return list.filter(function (e) { return e && typeof e === 'object' && !Array.isArray(e); }).map(function (e) {
       var props = e.event_properties || e.properties || e;
-      var t = e.t || e.time || e.timestamp || Date.now();
-      if (typeof t === 'string') t = Date.parse(t) || Date.now();
+      if (!props || typeof props !== 'object' || Array.isArray(props)) return null;
+      var sourceTime = e.t != null ? e.t : (e.time != null ? e.time : e.timestamp);
+      var t = typeof sourceTime === 'string' ? Date.parse(sourceTime) : sourceTime;
+      if (!Number.isFinite(t) || t <= 0 || t > Date.now()) return null;
+      var type = text(e.type || e.event_type, 60);
+      if (!/^orvantro_[a-z_]+$/.test(type) && type !== 'pageview') return null;
+      var cc = text(props.country_code || e.country_code, 2).toUpperCase();
+      if (!/^[A-Z]{2}$/.test(cc)) cc = '';
+      var path = text(props.path || e.path, 200).split(/[?#]/)[0];
+      var referrer = '';
+      try { var url = new URL(text(props.referrer || e.referrer, 2000));
+        if (url.protocol === 'https:' || url.protocol === 'http:') referrer = url.origin;
+      } catch (ignore) { /* no valid referrer */ }
+      var ms = Number(props.engaged_ms != null ? props.engaged_ms : e.engaged_ms);
       return {
-        t: t,
-        type: e.type || e.event_type || 'orvantro_pageview',
-        site: props.site || e.site || 'unknown',
-        path: props.path || e.path || '/',
-        returning: !!(props.visitor_returning != null ? props.visitor_returning : e.returning),
-        country_code: (props.country_code || e.country_code || '').toUpperCase(),
-        country: props.country || e.country || '',
-        region: props.region || e.region || '',
-        city: props.city || e.city || '',
-        device_type: props.device_type || e.device_type || '',
-        referrer: props.referrer || e.referrer || '',
-        utm_source: props.utm_source || e.utm_source || '',
-        utm_medium: props.utm_medium || e.utm_medium || '',
-        utm_campaign: props.utm_campaign || e.utm_campaign || '',
-        engaged_ms: props.engaged_ms || e.engaged_ms || 0,
-        visitor_id: e.user_id || e.visitor_id || e.device_id || props.visitor_id || '',
-        first_seen: props.first_seen || e.first_seen || 0,
-        session_id: props.session_id || e.session_id || '',
-        _sample: !!e._sample
+        t: t, type: type, site: text(props.site || e.site, 80) || 'unknown', path: path || '/',
+        returning: props.visitor_returning === true || e.returning === true,
+        country_code: cc, country: text(props.country || e.country, 80),
+        device_type: text(props.device_type || e.device_type, 30), referrer: referrer,
+        utm_source: text(props.utm_source || e.utm_source, 80),
+        utm_medium: text(props.utm_medium || e.utm_medium, 80),
+        utm_campaign: text(props.utm_campaign || e.utm_campaign, 80),
+        engaged_ms: Number.isFinite(ms) && ms >= 0 && ms <= 86400000 ? ms : 0,
+        visitor_id: text(e.user_id || e.visitor_id || e.device_id || props.visitor_id, 120),
+        session_id: text(props.session_id || e.session_id, 120), _sample: e._sample === true
       };
-    }).filter(function (e) {
-      return String(e.type).indexOf('orvantro_') === 0 || e.type === 'pageview';
-    });
+    }).filter(Boolean);
   }
 
   function loadLocalRingSync() {
@@ -120,8 +121,7 @@
       if (window.OrvantroAnalytics && OrvantroAnalytics.getRing) {
         return normalizeImported(OrvantroAnalytics.getRing());
       }
-      var raw = localStorage.getItem('orvantro_analytics_ring');
-      return normalizeImported(raw ? JSON.parse(raw) : []);
+      return [];
     } catch (e) {
       return [];
     }
@@ -162,39 +162,41 @@
     var pageviews = events.filter(function (e) {
       return e.type === 'orvantro_pageview' || e.type === 'pageview';
     });
-    var visitors = {};
-    var returningVisitors = {};
-    var newVisitors = {};
-    var byDay = {};
-    var bySite = {};
-    var byCountry = {};
-    var byPath = {};
-    var byRef = {};
-    var byDevice = {};
-    var byUtm = {};
+    var visitors = Object.create(null);
+    var returningVisitors = Object.create(null);
+    var newVisitors = Object.create(null);
+    var byDay = Object.create(null);
+    var bySite = Object.create(null);
+    var byCountry = Object.create(null);
+    var byPath = Object.create(null);
+    var byRef = Object.create(null);
+    var byDevice = Object.create(null);
+    var byUtm = Object.create(null);
     var engageSum = 0;
     var engageN = 0;
     var engageBuckets = { '0–5s': 0, '5–15s': 0, '15–60s': 0, '60s+': 0 };
 
     pageviews.forEach(function (e) {
-      var vid = e.visitor_id || (e.site + '|' + e.t);
-      visitors[vid] = true;
-      if (e.returning) returningVisitors[vid] = true;
-      else newVisitors[vid] = true;
+      var vid = e.visitor_id;
+      if (vid) {
+        visitors[vid] = true;
+        if (e.returning) returningVisitors[vid] = true;
+        else newVisitors[vid] = true;
+      }
 
       var dk = dayKey(e.t);
       byDay[dk] = (byDay[dk] || 0) + 1;
       bySite[e.site || 'unknown'] = (bySite[e.site || 'unknown'] || 0) + 1;
-      var cc = e.country_code || '??';
-      if (!byCountry[cc]) byCountry[cc] = { code: cc, name: e.country || cc, n: 0 };
-      byCountry[cc].n += 1;
+      var cc = e.country_code;
+      if (cc) {
+        if (!byCountry[cc]) byCountry[cc] = { code: cc, name: e.country || cc, n: 0 };
+        byCountry[cc].n += 1;
+      }
 
       var path = e.path || '/';
       byPath[path] = (byPath[path] || 0) + 1;
-      var ref = hostOf(e.referrer);
-      byRef[ref] = (byRef[ref] || 0) + 1;
-      var dev = e.device_type || 'unknown';
-      byDevice[dev] = (byDevice[dev] || 0) + 1;
+      if (e.referrer) { var ref = hostOf(e.referrer); byRef[ref] = (byRef[ref] || 0) + 1; }
+      if (e.device_type) byDevice[e.device_type] = (byDevice[e.device_type] || 0) + 1;
 
       if (e.utm_source || e.utm_medium || e.utm_campaign) {
         var uk = [e.utm_source || '—', e.utm_medium || '—', e.utm_campaign || '—'].join('\t');
@@ -217,7 +219,7 @@
     var brandNew = Object.keys(newVisitors).length;
     var returningRate = unique ? returning / unique : 0;
     var short = pageviews.filter(function (e) { return e.engaged_ms > 0 && e.engaged_ms < 5000; }).length;
-    var bounceProxy = engageN ? short / engageN : 0.35;
+    var bounceProxy = engageN ? short / engageN : null;
 
     return {
       pageviews: pageviews.length,
@@ -241,24 +243,18 @@
 
   function linearForecast(byDay, daysAhead) {
     var keys = Object.keys(byDay).sort();
-    if (keys.length < 2) {
-      var last = keys.length ? byDay[keys[keys.length - 1]] : 10;
-      var flat = [];
-      for (var i = 1; i <= daysAhead; i++) {
-        var d = new Date();
-        d.setDate(d.getDate() + i);
-        flat.push({ day: dayKey(d.getTime()), value: last, estimate: true });
-      }
-      return flat;
-    }
+    if (keys.length < 3) return [];
+
     var ys = keys.map(function (k) { return byDay[k]; });
     var n = ys.length;
+    var firstDate = Date.parse(keys[0] + 'T00:00:00Z');
+    var xs = keys.map(function (k) { return (Date.parse(k + 'T00:00:00Z') - firstDate) / 86400000; });
     var sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
     for (var i = 0; i < n; i++) {
-      sumX += i;
+      sumX += xs[i];
       sumY += ys[i];
-      sumXY += i * ys[i];
-      sumXX += i * i;
+      sumXY += xs[i] * ys[i];
+      sumXX += xs[i] * xs[i];
     }
     var denom = n * sumXX - sumX * sumX;
     var slope = denom ? (n * sumXY - sumX * sumY) / denom : 0;
@@ -267,7 +263,7 @@
     for (var a = 1; a <= daysAhead; a++) {
       var d2 = new Date();
       d2.setDate(d2.getDate() + a);
-      var val = Math.max(0, Math.round(intercept + slope * (n - 1 + a)));
+      var val = Math.max(0, Math.round(intercept + slope * ((Date.parse(dayKey(d2.getTime()) + 'T00:00:00Z') - firstDate) / 86400000)));
       out.push({ day: dayKey(d2.getTime()), value: val, estimate: true });
     }
     return out;
@@ -275,17 +271,19 @@
 
   function prospectNotes(agg, forecast) {
     var notes = [];
+    if (!agg.pageviews) return [{ title: '관측 데이터 없음', body: '표시할 방문 기록이 없어 추세와 참여도를 판단할 수 없습니다.' }];
+    if (!forecast.length) notes.push({ title: '전망 보류', body: '서로 다른 날짜의 관측이 3일 이상 필요합니다. 빈 날짜의 방문 수는 추정하지 않습니다.' });
     var fSum = forecast.reduce(function (s, x) { return s + x.value; }, 0);
     var fAvg = forecast.length ? fSum / forecast.length : 0;
     var days = Object.keys(agg.byDay).sort();
     var recent = days.slice(-3).map(function (k) { return agg.byDay[k]; });
     var recentAvg = recent.length ? recent.reduce(function (a, b) { return a + b; }, 0) / recent.length : 0;
 
-    if (fAvg > recentAvg * 1.08) {
+    if (forecast.length && fAvg > recentAvg * 1.08) {
       notes.push({ title: '성장 전망', body: '최근 추세 기준 향후 트래픽이 완만히 상승할 가능성이 있습니다. (추정)' });
-    } else if (fAvg < recentAvg * 0.92) {
+    } else if (forecast.length && fAvg < recentAvg * 0.92) {
       notes.push({ title: '둔화 신호', body: '최근 대비 전망 평균이 낮습니다. 유입 채널·UTM을 점검해 보세요. (추정)' });
-    } else {
+    } else if (forecast.length) {
       notes.push({ title: '안정 구간', body: '단기 전망은 최근 평균과 비슷한 수준으로 보입니다. (추정)' });
     }
 
@@ -297,7 +295,7 @@
 
     if (agg.bounceProxy > 0.55) {
       notes.push({ title: '이탈 대리지표', body: '짧은 체류 비중이 큽니다(하트비트 기반 대리지표). 첫 화면 가치 전달을 강화하세요.' });
-    } else {
+    } else if (agg.engageN) {
       notes.push({ title: '참여도', body: '체류 대리지표가 양호한 편입니다. 핵심 플로우 유지에 집중하세요.' });
     }
 
@@ -329,7 +327,7 @@
   function setStatus(text, tone, sample) {
     var el = $('statusLine');
     el.dataset.tone = tone || '';
-    el.innerHTML = (sample ? '<span class="sample-tag">샘플</span>' : '') + text;
+    el.textContent = (sample ? '[샘플] ' : '') + text;
   }
 
   function drawTrend(canvas, byDay, forecast) {
@@ -467,26 +465,7 @@
     }).join('');
   }
 
-  function renderAbacusStrip() {
-    var el = $('abacusStrip');
-    var a = state.abacus;
-    var chips = [
-      { label: '전역 PV (Abacus)', key: 'pageviews' },
-      { label: '세션', key: 'sessions' },
-      { label: '신규(대략)', key: 'unique_first' },
-      { label: '재방문(대략)', key: 'returning' }
-    ];
-    PRODUCTS.forEach(function (p) {
-      if (p.id === 'all') return;
-      chips.push({ label: productLabel(p.id) + ' PV', key: 'pv_' + p.id });
-    });
-    var html = chips.map(function (c) {
-      var v = a[c.key];
-      if (v == null) return '';
-      return '<div class="abacus-chip"><span>' + escapeHtml(c.label) + '</span><strong>' + v + '</strong></div>';
-    }).join('');
-    el.innerHTML = html || '<div class="abacus-chip"><span>공개 집계</span><strong>연결 대기</strong></div>';
-  }
+
 
   function render() {
     var filtered = filterEvents(state.events);
@@ -495,16 +474,14 @@
     var forecast = linearForecast(agg.byDay, horizon);
     var notes = prospectNotes(agg, forecast);
 
-    $('kpiVisitors').textContent = String(agg.unique);
+    $('kpiVisitors').textContent = agg.unique ? String(agg.unique) : '미수집';
     $('kpiPageviews').textContent = String(agg.pageviews);
-    $('kpiReturning').textContent = Math.round(agg.returningRate * 100) + '%';
+    $('kpiReturning').textContent = agg.unique ? Math.round(agg.returningRate * 100) + '%' : '미수집';
     $('kpiEngage').textContent = agg.avgEngage ? (Math.round(agg.avgEngage / 1000) + 's') : '—';
-    $('kpiVisitorsHint').textContent = '고유 ' + agg.unique + ' · 신규 ' + agg.brandNew + ' · 재방문 ' + agg.returning;
-    $('kpiPageviewsHint').textContent = state.abacus.pageviews != null
-      ? ('필터 PV · 전역 Abacus ≈ ' + state.abacus.pageviews)
-      : '필터 적용 페이지뷰';
-    $('kpiReturningHint').textContent = 'unique vs returning 탐지';
-    $('kpiEngageHint').textContent = '하트비트 · bounce 대리 ' + Math.round(agg.bounceProxy * 100) + '%';
+    $('kpiVisitorsHint').textContent = agg.unique ? '가져온 식별자 기준 · 실제 인원수와 다를 수 있음' : '로컬 기록에는 고유 방문자 정보가 없습니다';
+    $('kpiPageviewsHint').textContent = '현재 선택한 데이터의 페이지뷰 · 전체 방문자 통계 아님';
+    $('kpiReturningHint').textContent = agg.unique ? '가져온 식별자가 있는 기록만 집계' : '로컬 기록은 방문자를 식별하지 않습니다';
+    $('kpiEngageHint').textContent = agg.engageN ? '참여 시간 값이 있는 페이지뷰만 집계' : '참여 시간을 수집하지 않습니다';
 
     var canvas = $('trendChart');
     var ok = drawTrend(canvas, agg.byDay, forecast);
@@ -538,11 +515,12 @@
       var siteEvents = filtered.filter(function (e) {
         return (e.type === 'orvantro_pageview' || e.type === 'pageview') && e.site === site;
       });
-      var vids = {};
-      var ret = {};
-      var neu = {};
+      var vids = Object.create(null);
+      var ret = Object.create(null);
+      var neu = Object.create(null);
       siteEvents.forEach(function (e) {
-        var id = e.visitor_id || 'anon';
+        var id = e.visitor_id;
+        if (!id) return;
         vids[id] = true;
         if (e.returning) ret[id] = true;
         else neu[id] = true;
@@ -551,8 +529,8 @@
       var r = Object.keys(ret).length;
       var n = Object.keys(neu).length;
       return '<tr><td>' + escapeHtml(productLabel(site)) + '</td><td>' + siteEvents.length +
-        '</td><td>' + u + '</td><td>' + n + '</td><td>' + r + '</td><td>' +
-        (u ? Math.round((r / u) * 100) : 0) + '%</td></tr>';
+        '</td><td>' + (u || '—') + '</td><td>' + (u ? n : '—') + '</td><td>' + (u ? r : '—') + '</td><td>' +
+        (u ? Math.round((r / u) * 100) + '%' : '—') + '</td></tr>';
     }).join('');
     $('uniqTableBody').innerHTML = uniqRows || '<tr><td colspan="6">데이터 없음</td></tr>';
 
@@ -565,18 +543,18 @@
       return '<li><strong>' + escapeHtml(n.title) + '</strong><br>' + escapeHtml(n.body) + '</li>';
     }).join('');
 
-    renderAbacusStrip();
+    renderPrivacy();
 
     var sel = $('filterCountry');
     var current = state.filters.country;
-    var allCodes = {};
+    var allCodes = Object.create(null);
     state.events.forEach(function (e) {
       if (e.country_code) allCodes[e.country_code] = e.country || e.country_code;
     });
     var opts = '<option value="all">전체 국가</option>' +
       Object.keys(allCodes).sort().map(function (c) {
-        return '<option value="' + c + '"' + (c === current ? ' selected' : '') + '>' + c +
-          (allCodes[c] && allCodes[c] !== c ? ' · ' + allCodes[c] : '') + '</option>';
+        return '<option value="' + escapeHtml(c) + '"' + (c === current ? ' selected' : '') + '>' + escapeHtml(c) +
+          (allCodes[c] && allCodes[c] !== c ? ' · ' + escapeHtml(allCodes[c]) : '') + '</option>';
       }).join('');
     if (sel.dataset.built !== opts) {
       sel.innerHTML = opts;
@@ -585,73 +563,53 @@
     }
 
     var guide = $('emptyGuide');
-    guide.hidden = !(state.mode === 'empty' || (state.mode === 'sample' && state.forceSample));
-    if (state.mode === 'empty') guide.hidden = false;
-    if (state.mode === 'live' || state.mode === 'imported') guide.hidden = true;
+    guide.hidden = state.mode !== 'empty';
   }
 
-  async function refreshAbacus() {
-    var counters = ['pageviews', 'sessions', 'returning', 'unique_first'];
-    var out = {};
-    await Promise.all(counters.map(async function (c) {
-      try {
-        var r = await fetch('https://abacus.jasoncameron.dev/get/orvantro/' + c, { mode: 'cors' });
-        if (r.ok) {
-          var j = await r.json();
-          out[c] = j.value;
-        }
-      } catch (e) { /* ignore */ }
-    }));
-    await Promise.all(PRODUCTS.filter(function (p) { return p.id !== 'all'; }).map(async function (p) {
-      try {
-        var r2 = await fetch('https://abacus.jasoncameron.dev/get/orvantro/pv_' + p.id, { mode: 'cors' });
-        if (r2.ok) {
-          var j2 = await r2.json();
-          out['pv_' + p.id] = j2.value;
-        }
-      } catch (e2) { /* ignore */ }
-    }));
-    state.abacus = out;
+  function renderPrivacy() {
+    var api = window.OrvantroAnalytics;
+    var enabled = !!(api && api.isEnabled());
+    $('btnEnableLocal').disabled = enabled;
+    $('btnDisableLocal').disabled = !enabled;
+    $('privacyStatus').textContent = enabled
+      ? '이 브라우저의 같은 출처에서 로컬 기록이 켜져 있습니다. 외부 전송 없음.'
+      : '로컬 기록 꺼짐. 자동 방문 수집과 외부 분석 전송을 하지 않습니다.';
   }
 
   function chooseDatasetFrom(localEvents) {
     var local = (localEvents || []).filter(function (e) { return !e._sample; });
-    var imported = [];
-    try {
-      var raw = localStorage.getItem('orvantro_insights_import');
-      if (raw) imported = normalizeImported(JSON.parse(raw));
-    } catch (e) { /* ignore */ }
+    var imported = state.imported;
 
     if (state.forceSample) {
       state.mode = 'sample';
       state.events = seededSample();
-      setStatus('샘플 시계열입니다. 「라이브 데이터」로 1st-party 저장소로 돌아갈 수 있습니다.', 'warn', true);
+      setStatus('샘플 시계열입니다. 「로컬 기록」으로 이 브라우저 기록으로 돌아갈 수 있습니다.', 'warn', true);
       return;
     }
 
     if (imported.length) {
       state.mode = 'imported';
-      state.events = imported.concat(local);
-      setStatus('가져온 JSON + 이 브라우저 1st-party 이벤트를 표시합니다. 키 설정 없음.', 'ok', false);
+      state.events = imported;
+      setStatus('가져온 JSON만 표시합니다. 로컬 기록과 합산하지 않으며 파일 내용의 진위는 확인하지 않습니다.', 'ok', false);
       return;
     }
     if (local.length >= 1) {
       state.mode = 'live';
       state.events = local;
       setStatus(
-        '1st-party 저장소(IndexedDB·localStorage)의 ' + local.length +
-        '개 이벤트를 표시합니다. Abacus 공개 집계는 상단 칩을 참고하세요.',
+        '이 브라우저 같은 출처에 저장된 ' + local.length +
+        '개 로컬 기록입니다. 전체 방문자나 다른 기기의 통계가 아닙니다.',
         'ok',
         false
       );
       return;
     }
 
-    // Truly empty — prefer guidance over auto-sample; still show empty series + abacus
+    // Empty is a real state; sample data is only shown on explicit request.
     state.mode = 'empty';
     state.events = [];
     setStatus(
-      '수집된 이벤트가 없습니다. 다른 ORVANTRO 페이지를 열어 첫 이벤트를 만드세요. 샘플은 「샘플 보기」로 켤 수 있습니다.',
+      '로컬 기록이 없습니다. 기록을 켜거나 JSON을 가져올 수 있습니다. 샘플은 「샘플 보기」를 눌렀을 때만 표시합니다.',
       'warn',
       false
     );
@@ -659,11 +617,8 @@
 
   async function reloadData() {
     var local = await loadLocalStore();
-    // Give tracker a moment to write this page's pageview
-    if (!local.length) {
-      await new Promise(function (r) { setTimeout(r, 400); });
-      local = await loadLocalStore();
-    }
+
+
     chooseDatasetFrom(local);
     render();
   }
@@ -675,20 +630,21 @@
       return;
     }
     try {
+      if (text.length > 2000000) throw new Error('too large');
       var parsed = JSON.parse(text);
       var events = normalizeImported(parsed);
       if (!events.length) throw new Error('empty');
-      localStorage.setItem('orvantro_insights_import', JSON.stringify(events));
+      state.imported = events;
       state.forceSample = false;
       reloadData();
       setStatus(events.length + '개 이벤트를 가져왔습니다.', 'ok', false);
     } catch (e) {
-      setStatus('JSON 형식을 읽을 수 없습니다. 링 버퍼 배열을 붙여 넣으세요.', 'bad', false);
+      setStatus('유효한 이벤트가 없습니다. 2MB 이하, 최대 10,000개 이벤트와 올바른 날짜를 확인하세요.', 'bad', false);
     }
   }
 
   function clearImport() {
-    localStorage.removeItem('orvantro_insights_import');
+    state.imported = [];
     $('importJson').value = '';
     state.forceSample = false;
     reloadData();
@@ -724,7 +680,7 @@
     var subject = encodeURIComponent('[ORVANTRO 베타 피드백] ' + product + ' / ' + rating);
     var text = encodeURIComponent(
       '제품: ' + product + '\n만족도: ' + rating + '\n회신 이메일: ' + (email || '(없음)') +
-      '\n\n피드백:\n' + body + '\n\n— ' + location.href
+      '\n\n피드백:\n' + body + '\n\n— ' + location.origin + location.pathname
     );
     window.location.href = 'mailto:judanvy8@gmail.com?subject=' + subject + '&body=' + text;
     return false;
@@ -734,17 +690,35 @@
     // Clear legacy Amplitude secret UX leftovers from older builds
     try { localStorage.removeItem('orvantro_amp_creds'); } catch (e) { /* ignore */ }
 
+    document.querySelector('#feedback form').addEventListener('submit', function (event) { event.preventDefault(); window.orvantroSubmitFeedback(this); });
     fillProductFilter();
     wireFilters();
+    $('btnEnableLocal').addEventListener('click', function () {
+      var enabled = window.OrvantroAnalytics && OrvantroAnalytics.setEnabled(true);
+      state.forceSample = false;
+      state.imported = [];
+      reloadData().then(function () { if (!enabled) setStatus('브라우저 저장소를 사용할 수 없어 기록을 켜지 못했습니다.', 'bad'); });
+    });
+    $('btnDisableLocal').addEventListener('click', function () {
+      if (window.OrvantroAnalytics) OrvantroAnalytics.setEnabled(false);
+      renderPrivacy();
+    });
+    $('btnClearLocal').addEventListener('click', async function () {
+      if (!window.confirm('이 출처의 로컬 방문 기록과 이전 분석 식별자를 지울까요? 제품의 원가·계산 데이터는 유지됩니다.')) return;
+      var ok = await OrvantroAnalytics.clearRing();
+      state.forceSample = false; state.imported = []; $('importJson').value = '';
+      await reloadData();
+      setStatus(ok ? '이 출처의 분석 기록을 지웠습니다.' : '일부 이전 기록을 지우지 못했습니다. 같은 출처의 다른 탭을 닫은 후 다시 시도하세요.', ok ? 'ok' : 'warn');
+    });
     $('btnImport').addEventListener('click', importJson);
     $('btnClearImport').addEventListener('click', clearImport);
     $('btnRefresh').addEventListener('click', async function () {
-      await refreshAbacus();
       state.forceSample = false;
       await reloadData();
     });
     $('btnLive').addEventListener('click', async function () {
       state.forceSample = false;
+      state.imported = [];
       await reloadData();
     });
     $('btnUseSample').addEventListener('click', function () {
@@ -753,11 +727,9 @@
       render();
     });
 
-    try {
-      await refreshAbacus();
-    } catch (e) { /* ignore */ }
     await reloadData();
 
+    window.addEventListener('storage', function () { if (!state.forceSample && !state.imported.length) reloadData(); else renderPrivacy(); });
     window.addEventListener('resize', function () {
       render();
     });

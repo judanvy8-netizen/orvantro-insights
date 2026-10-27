@@ -2,16 +2,12 @@
 <html lang="ko" data-orvantro-site="orvantro-insights">
 <head>
   <meta charset="UTF-8">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="ORVANTRO Insights — 키 설정 없이 방문자·국가·재방문·전망을 보는 1st-party 분석 콘솔.">
+  <meta name="description" content="ORVANTRO Insights — 외부 전송 없이 이 브라우저의 선택적 로컬 기록과 가져온 JSON을 확인합니다.">
   <meta name="theme-color" content="#061018">
   <title>ORVANTRO Insights — 전망 · 방문 분석</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="preload" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./insights.css">
 </head>
 <body>
@@ -19,10 +15,10 @@
     <header class="topbar">
       <div class="brand-block">
         <div class="brand">ORVANTRO <span>· 오르반트로</span></div>
-        <div class="brand-sub">Insights · 1st-party 방문 분석 · 전망 콘솔</div>
+        <div class="brand-sub">Insights · 로컬 기록 · 데이터 미리보기</div>
       </div>
       <div class="top-links">
-        <span class="pill">BETA · 키 설정 불필요</span>
+        <span class="pill">BETA · 외부 분석 전송 없음</span>
         <a class="link-chip" href="https://orvantro.com/">공식 홈</a>
         <a class="link-chip" href="https://judanvy8-netizen.github.io/orvantro/">Hub</a>
       </div>
@@ -30,27 +26,24 @@
 
     <section class="hero" aria-label="Insights 소개">
       <div class="hero-brand">ORVANTRO</div>
-      <h1>Insights — 키 없이, 지금을 보고 전망을 읽습니다</h1>
-      <p>
-        모든 ORVANTRO 사이트의 방문자·페이지뷰·고유/재방문·국가·경로·UTM을
-        브라우저 1st-party 저장소와 공개 집계로 모읍니다.
-        Amplitude/GA4 시크릿을 붙여 넣을 필요가 없습니다. 단기 전망은 추세 기반 <strong>추정</strong>입니다.
-      </p>
-      <div class="notice">
-        수집은 각 사이트의 <code>orvantro-analytics.js</code>가 IndexedDB·localStorage 링과
-        Abacus 공개 카운터(키 없음)에 기록합니다. 이 콘솔은 같은 github.io 출처의 1st-party 이벤트와
-        공개 집계를 우선 표시합니다. 피드가 비어 있으면 안내 후, 원할 때만 샘플을 켭니다.
+      <h1>Insights — 내 브라우저 기록을 살펴봅니다</h1>
+      <p>선택해 켠 로컬 방문 기록과 직접 가져온 JSON을 확인합니다. 이 페이지는 전체 방문자 통계나 관리자 전용 콘솔이 아닙니다.</p>
+      <div class="notice">기록은 기본적으로 꺼져 있습니다. 켜면 이 브라우저의 같은 출처에 페이지 이름과 시각만 최대 800개·최근 30일 범위로 저장합니다. 외부 분석 서버, 위치 조회, 방문자 식별자는 사용하지 않습니다. <strong>orvantro.com과 github.io의 기록은 분리됩니다.</strong></div>
+    </section>
+    <section class="panel" aria-label="로컬 기록 설정" style="margin-bottom:18px">
+      <h2>로컬 기록 설정</h2>
+      <p class="lead">이 기기에서 직접 확인할 때만 켜세요. 같은 github.io 출처의 ORVANTRO 제품에 적용됩니다. 끄면 새 기록을 멈추고, 지우면 기존 분석 기록을 삭제합니다.</p>
+      <div class="actions-row">
+        <button type="button" class="btn btn-primary" id="btnEnableLocal">로컬 기록 켜기</button>
+        <button type="button" class="btn btn-ghost" id="btnDisableLocal">로컬 기록 끄기</button>
+        <button type="button" class="btn btn-ghost" id="btnClearLocal">로컬 기록 지우기</button>
       </div>
+      <p class="help-note" id="privacyStatus" role="status"></p>
     </section>
 
     <div class="empty-guide" id="emptyGuide" hidden>
       <strong>아직 이 브라우저에 수집된 이벤트가 없습니다.</strong><br>
-      다른 ORVANTRO 페이지를 열어 첫 이벤트를 만드세요 —
-      <a href="https://judanvy8-netizen.github.io/orvantro/" target="_blank" rel="noopener">Hub</a>,
-      <a href="https://judanvy8-netizen.github.io/marginkit-pro-beta/" target="_blank" rel="noopener">MarginKit</a>,
-      <a href="https://judanvy8-netizen.github.io/feeroi/" target="_blank" rel="noopener">Feeroi</a>,
-      <a href="https://judanvy8-netizen.github.io/sellerbill/" target="_blank" rel="noopener">SellerBill</a>
-      — 같은 github.io 출처면 여기에 바로 쌓입니다. 아래는 공개 Abacus 집계와(원하면) 샘플입니다.
+      위에서 로컬 기록을 켠 후 같은 출처의 제품을 방문하면 기록이 쌓입니다. 다른 기기나 다른 출처의 방문은 이곳에 나타나지 않습니다. 샘플 데이터는 아래 버튼을 눌러 볼 수 있습니다.
     </div>
 
     <div class="filters" aria-label="필터">
@@ -79,14 +72,13 @@
     </div>
 
     <div class="actions-row">
-      <button type="button" class="btn btn-primary" id="btnLive">라이브 데이터</button>
+      <button type="button" class="btn btn-primary" id="btnLive">로컬 기록</button>
       <button type="button" class="btn btn-ghost" id="btnUseSample">샘플 보기</button>
       <button type="button" class="btn btn-ghost" id="btnImport">JSON 가져오기 (선택)</button>
       <button type="button" class="btn btn-ghost" id="btnClearImport">가져오기 지우기</button>
     </div>
     <p class="status-line" id="statusLine" role="status">불러오는 중…</p>
 
-    <div class="abacus-strip" id="abacusStrip" aria-label="공개 집계"></div>
 
     <section class="kpi-grid" aria-label="핵심 지표">
       <article class="kpi">
@@ -133,7 +125,7 @@
       </section>
       <section class="panel" aria-label="국가·지역">
         <h2>국가 / 지역 맵</h2>
-        <p class="lead">클라이언트 IP 기반 대략 위치</p>
+        <p class="lead">가져온 JSON·샘플에 있는 국가만 표시 · 위치 조회 없음</p>
         <div class="geo-map" id="geoMap"></div>
         <div class="bars" id="countryBars"></div>
       </section>
@@ -171,7 +163,7 @@
     <div class="grid-2-eq">
       <section class="panel" aria-label="참여도">
         <h2>참여도 · 디바이스</h2>
-        <p class="lead">하트비트 체류와 디바이스 분포</p>
+        <p class="lead">가져온 JSON·샘플에 값이 있는 경우만 표시</p>
         <div class="bars" id="deviceBars"></div>
         <div class="table-wrap" style="margin-top:12px">
           <table>
@@ -182,7 +174,7 @@
       </section>
       <section class="panel" aria-label="고유·중복 체크">
         <h2>고유 탐지 상세</h2>
-        <p class="lead">visitor id(localStorage) + firstSeen. 같은 브라우저 재방문은 returning.</p>
+        <p class="lead">가져온 식별자 기준 집계입니다. 로컬 기록은 방문자를 식별하지 않으며 고유·재방문 수는 미수집입니다.</p>
         <div class="table-wrap">
           <table>
             <thead>
@@ -197,7 +189,7 @@
     <section class="panel" style="margin-bottom:14px" aria-label="선택적 JSON">
       <h2>선택 · JSON 가져오기</h2>
       <p class="lead">
-        운영상 필요하면 링 버퍼/내보내기 JSON을 붙여 넣을 수 있습니다.
+        2MB 이하·최대 10,000개 이벤트 JSON을 붙여 넣을 수 있습니다.
         <strong>Amplitude API Secret / GA4 키는 필요하지 않으며 UI에도 없습니다.</strong>
       </p>
       <div class="import-box">
@@ -206,7 +198,7 @@
           <textarea id="importJson" placeholder='[{"t":1710000000000,"type":"orvantro_pageview","site":"feeroi","returning":false,"country_code":"KR"}]'></textarea>
         </div>
         <p class="help-note">
-          기본 경로는 1st-party 저장소 + Abacus 공개 집계입니다. 키를 붙여 넣는 단계는 없습니다.
+          가져온 JSON은 현재 페이지 메모리에서만 처리하며 새로고침하면 지워집니다. 로컬 기록과 섞거나 서버로 보내지 않습니다. 개인정보와 비밀값은 붙여 넣지 마세요.
         </p>
       </div>
     </section>
@@ -214,7 +206,7 @@
     <section class="feedback" id="feedback" aria-label="베타 피드백">
       <h2>베타 피드백</h2>
       <p class="lead">Insights 전망·지표가 유용했는지 알려 주세요. 메일 앱이 열립니다.</p>
-      <form onsubmit="return orvantroSubmitFeedback(this)">
+      <form >
         <div class="grid">
           <div class="field">
             <label for="ov-product">제품</label>
@@ -256,7 +248,7 @@
     </footer>
   </div>
 
-  <script>window.ORVANTRO_ANALYTICS = { site: 'orvantro-insights' };</script>
+  <script src="./analytics-config.js"></script>
   <script src="./orvantro-analytics.js" defer></script>
   <script src="./insights.js" defer></script>
 </body>
