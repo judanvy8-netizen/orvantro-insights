@@ -2,6 +2,8 @@ import { HttpError, json, readLimited } from './http.mjs';
 import { authorize } from './auth.mjs';
 import { handlePremium } from './premium.mjs';
 import { handleGithubAuth, pruneAuth } from './github-auth.mjs';
+import { audienceOf, DEVICES, DIMENSIONS } from './audience.mjs';
+import { handleIntegrations, integrationCron } from './integrations.mjs';
 export { authorize, verifyIdentity } from './auth.mjs';
 
 const RETENTION_DAYS = 30;
@@ -45,12 +47,12 @@ async function hmac(secret, value) {
 function validateEvent(value, origin) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'invalid_event');
   const keys = Object.keys(value).sort().join(',');
-  if (keys !== 'eventId,sessionId,site,v' || value.v !== 1 ||
+  if (keys !== 'eventId,sessionId,site,v' || ![1, 2].includes(value.v) ||
       !Object.hasOwn(SITES, value.site) || !UUID.test(value.eventId) || !UUID.test(value.sessionId)) {
     throw new HttpError(400, 'invalid_event');
   }
   if (SITES[value.site].origin !== origin) throw new HttpError(403, 'site_origin_mismatch');
-  return { site: value.site, eventId: value.eventId.toLowerCase(), sessionId: value.sessionId.toLowerCase() };
+  return { v: value.v, site: value.site, eventId: value.eventId.toLowerCase(), sessionId: value.sessionId.toLowerCase() };
 }
 
 async function collect(request, env, now) {
@@ -70,13 +72,15 @@ async function collect(request, env, now) {
   const event = validateEvent(value, origin);
   const day = dayInSeoul(now);
   const received = Math.floor(now / 60_000) * 60_000;
+  // v1 consent did not cover coarse audience dimensions
+  const audience = event.v === 2 ? audienceOf(request) : { country: null, device: null, platform: null, browser: null };
   const [eventKey, sessionKey] = await Promise.all([
     hmac(env.ANALYTICS_HASH_SECRET, `event|${event.site}|${event.eventId}`),
     hmac(env.ANALYTICS_HASH_SECRET, `session|${day}|${event.site}|${event.sessionId}`),
   ]);
   const result = await env.DB.batch([
-    env.DB.prepare('INSERT OR IGNORE INTO analytics_events(event_key, session_key, site, day, received_at) VALUES (?1, ?2, ?3, ?4, ?5)')
-      .bind(eventKey, sessionKey, event.site, day, received),
+    env.DB.prepare('INSERT OR IGNORE INTO analytics_events(event_key, session_key, site, day, received_at, country, device, platform, browser) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)')
+      .bind(eventKey, sessionKey, event.site, day, received, ...DIMENSIONS.map(key => audience[key])),
     env.DB.prepare(`INSERT INTO analytics_collection(site, first_received_at, last_received_at) VALUES (?1, ?2, ?2)
       ON CONFLICT(site) DO UPDATE SET
       first_received_at = MIN(first_received_at, excluded.first_received_at),
@@ -93,27 +97,31 @@ function summaryRange(url, now) {
   if (!['7', '14', '30'].includes(raw)) throw new HttpError(400, 'invalid_range');
   const site = url.searchParams.get('site') || 'all';
   if (site !== 'all' && !Object.hasOwn(SITES, site)) throw new HttpError(400, 'invalid_site');
-  if ([...url.searchParams.keys()].some(key => !['range', 'site'].includes(key)) ||
-      url.searchParams.getAll('range').length > 1 || url.searchParams.getAll('site').length > 1) {
+  const country = url.searchParams.get('country') || 'all', device = url.searchParams.get('device') || 'all';
+  if (!['all', 'unknown', 'uncollected'].includes(country) && !/^[A-Z]{2}$/.test(country)) throw new HttpError(400, 'invalid_country');
+  if (!['all', ...DEVICES].includes(device)) throw new HttpError(400, 'invalid_device');
+  if ([...url.searchParams.keys()].some(key => !['range', 'site', 'country', 'device'].includes(key)) ||
+      ['range', 'site', 'country', 'device'].some(key => url.searchParams.getAll(key).length > 1)) {
     throw new HttpError(400, 'invalid_query');
   }
   const days = Number(raw);
-  return { days, from: dayInSeoul(now - (days - 1) * DAY_MS), to: dayInSeoul(now), site };
+  return { days, from: dayInSeoul(now - (days - 1) * DAY_MS), to: dayInSeoul(now), site, country, device };
 }
 
 async function summary(url, env, now) {
   if (!env.DB) throw new HttpError(503, 'storage_not_configured');
   const range = summaryRange(url, now);
-  const clause = 'day >= ?1 AND day <= ?2 AND (?3 = \'all\' OR site = ?3)';
-  const values = [range.from, range.to, range.site];
+  const clause = "day >= ?1 AND day <= ?2 AND (?3 = 'all' OR site = ?3) AND (?4 = 'all' OR COALESCE(country, 'uncollected') = ?4) AND (?5 = 'all' OR COALESCE(device, 'uncollected') = ?5)";
+  const values = [range.from, range.to, range.site, range.country, range.device];
   const statements = [
     env.DB.prepare(`SELECT COUNT(*) AS pageviews, COUNT(DISTINCT session_key) AS sessions, COUNT(DISTINCT day) AS activeDays FROM analytics_events WHERE ${clause}`).bind(...values),
     env.DB.prepare(`SELECT day AS date, COUNT(*) AS pageviews, COUNT(DISTINCT session_key) AS sessions FROM analytics_events WHERE ${clause} GROUP BY day ORDER BY day`).bind(...values),
     env.DB.prepare(`SELECT site, COUNT(*) AS pageviews, COUNT(DISTINCT session_key) AS sessions FROM analytics_events WHERE ${clause} GROUP BY site ORDER BY site`).bind(...values),
     env.DB.prepare('SELECT MIN(first_received_at) AS startedAt, MAX(last_received_at) AS lastReceivedAt FROM analytics_collection WHERE (?1 = \'all\' OR site = ?1)').bind(range.site),
   ];
+  for (const dimension of DIMENSIONS) statements.push(env.DB.prepare(`SELECT COALESCE(${dimension}, 'uncollected') AS value, COUNT(*) AS pageviews, COUNT(DISTINCT session_key) AS sessions FROM analytics_events WHERE ${clause} GROUP BY ${dimension} ORDER BY pageviews DESC, value LIMIT 256`).bind(...values));
   const results = await env.DB.batch(statements);
-  if (results.length !== 4 || results.some(item => item.success === false || !Array.isArray(item.results))) {
+  if (results.length !== statements.length || results.some(item => item.success === false || !Array.isArray(item.results))) {
     throw new HttpError(503, 'storage_unavailable');
   }
   const totals = results[0].results[0];
@@ -134,6 +142,8 @@ async function summary(url, env, now) {
     },
     metrics: { pageviews: Number(totals.pageviews), sessions: Number(totals.sessions), activeDays: Number(totals.activeDays) },
     daily,
+    filters: { site: range.site, country: range.country, device: range.device },
+    breakdowns: Object.fromEntries(DIMENSIONS.map((dimension, index) => [dimension, results[4 + index].results.map(row => ({ value: row.value, pageviews: Number(row.pageviews), sessions: Number(row.sessions) }))])),
     bySite: Object.entries(SITES).filter(([site]) => range.site === 'all' || site === range.site).map(([site, config]) => ({
       site, path: config.path, pageviews: Number(bySite.get(site)?.pageviews || 0), sessions: Number(bySite.get(site)?.sessions || 0),
     })),
@@ -167,6 +177,9 @@ export async function handleRequest(request, env, options = {}) {
   const fetcher = options.fetcher || fetch;
   const url = new URL(request.url);
   try {
+    if (url.pathname.startsWith('/api/automation/') || ['/api/admin/integrations','/api/admin/integrations/sync','/api/admin/report','/api/admin/report/settings'].includes(url.pathname)) {
+      return await handleIntegrations(request, env, { now, fetcher });
+    }
     if (url.pathname.startsWith('/auth/')) {
       if (env.AUTH_PROVIDER !== 'github') {
         if (url.pathname === '/auth/logout') return new Response(null, { status: 303, headers: { Location: '/cdn-cgi/access/logout', 'Cache-Control': 'no-store' } });
@@ -218,5 +231,5 @@ export async function pruneExpired(env, now = Date.now()) {
 
 export default {
   fetch(request, env) { return handleRequest(request, env); },
-  scheduled(controller, env, ctx) { ctx.waitUntil(pruneExpired(env, controller.scheduledTime)); },
+  scheduled(controller, env, ctx) { ctx.waitUntil(Promise.all([pruneExpired(env, controller.scheduledTime), integrationCron(env, controller.scheduledTime)])); },
 };

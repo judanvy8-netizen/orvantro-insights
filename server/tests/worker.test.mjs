@@ -17,7 +17,7 @@ test('successful collection persists only derived hashes, registered site and se
   assert.equal(response.status, 202);
   assert.deepEqual(await response.json(), { accepted: true, duplicate: false });
   const row = configuration.DB.rows()[0];
-  assert.deepEqual(Object.keys(row), ['event_key', 'session_key', 'site', 'day', 'received_at']);
+  assert.deepEqual(Object.keys(row), ['event_key', 'session_key', 'site', 'day', 'received_at', 'country', 'device', 'platform', 'browser']);
   assert.equal(row.day, '2026-11-01');
   assert.equal(row.received_at, now);
   assert.match(row.session_key, /^[a-f0-9]{64}$/);
@@ -81,7 +81,7 @@ test('collector rejects invalid origin, missing origin and site-origin mismatch'
 
 test('collector rejects free-form fields, timestamps, invalid IDs and sites', async () => {
   const configuration = env();
-  for (const input of [event({ path: '/orders/private?email=customer@example.test' }), event({ timestamp: now }), event({ eventId: '1' }), event({ site: '__proto__' }), event({ v: 2 }), [], null]) {
+  for (const input of [event({ path: '/orders/private?email=customer@example.test' }), event({ timestamp: now }), event({ eventId: '1' }), event({ site: '__proto__' }), event({ v: 99 }), [], null]) {
     assert.equal((await handleRequest(collectionRequest(input), configuration, { now })).status, 400);
   }
   assert.equal(configuration.DB.rows().length, 0);
