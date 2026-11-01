@@ -1,0 +1,11 @@
+# Private deployment configuration and local credentials
+/server/wrangler.jsonc
+**/.dev.vars*
+**/.env*
+**/.wrangler/
+
+# Generated browser asset bundle, rebuilt from an explicit filename allowlist
+/public_assets/
+
+# Optional local Wrangler installation
+**/node_modules/

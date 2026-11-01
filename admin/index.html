@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex,nofollow">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>ORVANTRO Insights — 운영자</title>
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script src="/admin/admin.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#overview">통계로 이동</a>
+  <div class="app">
+    <aside><a class="wordmark" href="https://orvantro.com/">ORVANTRO</a><p class="eyebrow">INSIGHTS / OPERATOR</p>
+      <nav aria-label="대시보드 메뉴"><a class="selected" href="#overview">방문 현황 <span>01</span></a><a href="#daily">일별 집계 <span>02</span></a><a href="#definition">측정 기준 <span>03</span></a></nav>
+      <div class="sidebar-note"><span class="dot"></span> 운영자 전용<br><small>서버 인증으로 접근을 확인합니다</small></div>
+      <a class="logout" href="/cdn-cgi/access/logout">로그아웃 ↗</a>
+    </aside>
+    <main id="overview">
+      <header><div><p class="eyebrow">ORVANTRO / CENTRAL ANALYTICS</p><h1>방문 현황</h1><p class="intro">수집 서버가 확인한 조회와 방문 세션</p></div><a class="home-link" href="https://orvantro.com/">공식 홈페이지 ↗</a></header>
+      <div class="status" id="status" role="status"><span>연결 확인 중</span></div>
+      <div class="filters"><label>기간<select id="range"><option value="7">최근 7일</option><option value="14" selected>최근 14일</option><option value="30">최근 30일</option></select></label><label>사이트<select id="site"><option value="all">전체 사이트</option><option value="orvantro">ORVANTRO</option><option value="marginkit-pro-beta">MarginKit</option><option value="orvantro-insights">Insights</option></select></label><button id="refresh" type="button">새로고침</button><button id="export" class="secondary" type="button" disabled>집계 CSV</button><p id="updated">서울 기준 · Asia/Seoul</p></div>
+      <section class="metrics" aria-label="핵심 지표"><article><p>측정된 페이지 조회</p><strong id="pageviews">—</strong><small>수신에 성공한 페이지뷰</small></article><article><p>일별 방문 세션 합계</p><strong id="sessions">—</strong><small>탭 · 사이트 · 날짜별 세션 수</small></article><article><p>조회가 있었던 날</p><strong id="activeDays">—</strong><small>선택한 기간 안의 활성 일수</small></article></section>
+      <div class="two-col"><section class="panel" id="daily"><div class="panel-title"><h2>일별 추이</h2><span>페이지 조회 / PV</span></div><div id="trend" class="trend"><p class="muted">서버에서 집계를 읽어오면 표시됩니다</p></div><details><summary>일별 숫자 보기</summary><div class="table-scroll"><table><thead><tr><th>날짜</th><th>페이지 조회</th><th>방문 세션</th></tr></thead><tbody id="dailyRows"></tbody></table></div></details></section><section class="panel"><div class="panel-title"><h2>사이트별</h2><span>집계 범위</span></div><div id="sites" class="sites"><p class="muted">데이터 대기 중</p></div></section></div>
+      <section class="panel definition" id="definition"><div><p class="eyebrow">MEASUREMENT NOTES</p><h2>숫자가 의미하는 것</h2></div><div><p>페이지 조회는 수집에 동의한 브라우저가 전송하고 서버가 검증한 이벤트 수입니다</p><p>방문 세션은 같은 탭에서 30분 안에 이어진 탐색을 기준으로 하며 사이트와 날짜가 바뀌면 별도로 집계됩니다<br>기간 합계는 실제 사람 수나 기간 내 고유 방문자 수가 아닙니다</p><p>수집 거부 · 브라우저 추적 방지 · 스크립트 차단 · 연결 실패는 집계되지 않습니다<br>수집 요청은 공개되어 있어 사람과 봇을 완벽하게 구분하거나 위조 요청을 완전히 막을 수 없습니다</p><dl><dt>첫 수집</dt><dd id="startedAt">—</dd><dt>마지막 수집</dt><dd id="lastAt">—</dd><dt>보관 기간</dt><dd>최근 30일</dd><dt>저장하지 않는 정보</dt><dd>IP · 전체 URL · 검색어 · 리퍼러 · 사용자 에이전트 · 정산 데이터</dd></dl></div></section>
+      <footer>ORVANTRO <span>Software · Games · Security</span></footer>
+    </main>
+  </div>
+</body>
+</html>

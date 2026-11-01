@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orvantro-insights-api",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../public_assets",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "orvantro-insights",
+    "database_id": "REPLACE_WITH_CREATED_D1_DATABASE_ID",
+    "migrations_dir": "migrations"
+  }],
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "REPLACE_WITH_TEAM.cloudflareaccess.com",
+    "ACCESS_AUD": "REPLACE_WITH_ACCESS_APPLICATION_AUDIENCE",
+    "PREMIUM_ACCESS_AUD": "REPLACE_WITH_SEPARATE_WORKSPACE_ACCESS_AUDIENCE",
+    "AUTH_ALLOWLIST_EMAILS": "REPLACE_WITH_OPERATOR_EMAIL",
+    "PUBLIC_STATS_ENABLED": "false"
+  },
+  "triggers": { "crons": ["15 * * * *"] },
+  "observability": { "enabled": false }
+}
