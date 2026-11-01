@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://orvantro-insights-api.orvantro.workers.dev; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="ORVANTRO Insights — 중앙 방문 집계와 운영자 대시보드, 별도로 분리된 로컬 데이터 진단.">
   <meta name="theme-color" content="#061018">
@@ -266,7 +266,7 @@
       <h2>방문 통계 참여</h2>
       <p>허용하면 페이지 조회와 탭 단위 방문 세션을 ORVANTRO 집계 서버에 전송합니다<br>세션은 30분 비활동 후 새로 시작하며 쿠키와 영구 방문자 식별자는 사용하지 않습니다<br>전체 주소 · 검색어 · 정산 데이터 · IP · 브라우저 정보는 분석 데이터베이스에 저장하지 않습니다<br>IP는 네트워크 통신 과정에서 호스팅 제공업체가 처리할 수 있으며 운영자의 분석 데이터로 저장하지 않습니다<br>거부해도 모든 제품 기능을 사용할 수 있고 추적 거부 설정을 존중합니다</p>
       <div class="actions-row"><button type="button" class="btn btn-primary" id="central-allow" disabled>통계 수집 허용</button><button type="button" class="btn btn-ghost" id="central-deny" disabled>통계 수집 끄기</button></div>
-      <p id="central-consent-status" role="status">중앙 집계 서버 연결 전 · 방문 정보 전송 없음</p>
+      <p id="central-consent-status" role="status">통계 수집 꺼짐 · 허용하면 현재 페이지부터 집계</p>
     </section>
 
     <footer class="foot">

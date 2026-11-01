@@ -44,7 +44,7 @@ async function fetchJwks(issuer, fetcher, now) {
   let response;
   try {
     response = await fetcher(`${issuer}/cdn-cgi/access/certs`, {
-      method: 'GET', redirect: 'error', credentials: 'omit',
+      method: 'GET', redirect: 'manual', credentials: 'omit',
       signal: AbortSignal.timeout(5000), headers: { Accept: 'application/json' },
     });
   } catch { throw new HttpError(503, 'identity_provider_unavailable'); }

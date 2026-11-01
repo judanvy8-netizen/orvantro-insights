@@ -39,7 +39,10 @@ function page(destination, logout = false) {
   const nonce = randomToken();
   const result = headers();
   result.set('Content-Type', 'text/html; charset=utf-8');
-  result.set('Content-Security-Policy', `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
+  // A no-referrer policy makes native form POSTs carry Origin: null in browsers
+  // Keep same-origin form provenance while still withholding referrers externally
+  result.set('Referrer-Policy', 'same-origin');
+  result.set('Content-Security-Policy', `default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self' https://github.com/login/oauth/authorize; base-uri 'none'; frame-ancestors 'none'`);
   const title = logout ? '로그아웃' : destination === 'admin' ? '운영자 로그인' : '팀 작업공간 로그인';
   return new Response(`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${title} · ORVANTRO</title><style nonce="${nonce}">:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#05070d;color:#e9f3fa;font:16px/1.7 system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px}main{width:100%;max-width:520px;border:1px solid #24384a;padding:42px;background:#0b1422}small{letter-spacing:.16em;color:#4ec1f0}h1{font-size:32px;letter-spacing:-.05em}p{color:#9bb1c4;font-size:14px}button{width:100%;padding:14px;margin-top:20px;border:0;background:#4ec1f0;color:#07121b;font:inherit;font-weight:700;cursor:pointer}a{color:#9bb1c4;display:inline-block;margin-top:24px;font-size:13px}button:focus-visible,a:focus-visible{outline:2px solid white;outline-offset:5px}</style><main><small>ORVANTRO / ACCOUNT</small><h1>${title}</h1><p>${logout ? '이 브라우저의 ORVANTRO 로그인 세션을 종료합니다' : '운영자 또는 초대된 팀 멤버만 접근할 수 있습니다<br>GitHub의 확인된 기본 이메일로 초대를 확인합니다'}</p><form method="post" action="/auth/${logout ? 'logout' : 'login'}"><input type="hidden" name="next" value="${destination}"><button type="submit">${logout ? '로그아웃' : 'GitHub로 계속하기'}</button></form><a href="https://orvantro.com/">ORVANTRO 홈으로 ↗</a></main></html>`, { headers: result });
 }
@@ -48,13 +51,14 @@ async function dbRows(env, sql, values = []) {
   if (!result?.success || !Array.isArray(result.results)) throw new HttpError(503, 'storage_unavailable');
   return result.results;
 }
-async function githubJson(fetcher, url, options) {
+async function githubJson(fetcher, url, options, stage) {
   let response;
-  try { response = await fetcher(url, { ...options, redirect: 'error', signal: AbortSignal.timeout(8000) }); }
-  catch { throw new HttpError(503, 'identity_provider_unavailable'); }
-  if (!response.ok) throw new HttpError(503, 'identity_provider_unavailable');
+  // Workers supports manual/follow only; reject all non-2xx responses without following redirects
+  try { response = await fetcher(url, { ...options, redirect: 'manual', signal: AbortSignal.timeout(8000) }); }
+  catch { throw new HttpError(503, `github_${stage}_connection_failed`); }
+  if (!response.ok) throw new HttpError(503, `github_${stage}_http_${response.status}`);
   try { return JSON.parse(await readLimited(response, 65_536)); }
-  catch { throw new HttpError(503, 'identity_provider_unavailable'); }
+  catch { throw new HttpError(503, `github_${stage}_invalid_response`); }
 }
 export async function verifyGithubSession(request, env, now = Date.now()) {
   config(env, request);
@@ -95,16 +99,16 @@ export async function handleGithubAuth(request, env, { now = Date.now(), fetcher
     const code = url.searchParams.get('code');
     if (url.searchParams.has('error') || !/^[A-Za-z0-9_-]{8,256}$/.test(code || '') || url.searchParams.getAll('code').length !== 1) throw new HttpError(401, 'login_cancelled');
     const tokenData = await githubJson(fetcher, 'https://github.com/login/oauth/access_token', {
-      method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'ORVANTRO-Login' },
       body: new URLSearchParams({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET,
         code, redirect_uri: settings.callback, code_verifier: flow.verifier }).toString(),
-    });
+    }, 'token');
     if (typeof tokenData.access_token !== 'string' || tokenData.access_token.length > 1024 ||
         /[\r\n]/.test(tokenData.access_token) || String(tokenData.token_type).toLowerCase() !== 'bearer') throw new HttpError(401, 'login_failed');
     const providerHeaders = { Accept: 'application/vnd.github+json', Authorization: `Bearer ${tokenData.access_token}`,
       'User-Agent': 'ORVANTRO-Login', 'X-GitHub-Api-Version': '2022-11-28' };
-    const user = await githubJson(fetcher, 'https://api.github.com/user', { headers: providerHeaders });
-    const emails = await githubJson(fetcher, 'https://api.github.com/user/emails?per_page=100', { headers: providerHeaders });
+    const user = await githubJson(fetcher, 'https://api.github.com/user', { headers: providerHeaders }, 'profile');
+    const emails = await githubJson(fetcher, 'https://api.github.com/user/emails?per_page=100', { headers: providerHeaders }, 'email');
     const email = Array.isArray(emails) && emails.find(item => item?.primary === true && item.verified === true && typeof item.email === 'string')?.email.toLowerCase();
     if (!Number.isSafeInteger(user.id) || user.id < 1 || !email || email.length > 254 || !EMAIL.test(email)) throw new HttpError(403, 'verified_email_required');
     const subject = `github:${user.id}`;

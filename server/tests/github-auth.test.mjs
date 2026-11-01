@@ -23,7 +23,7 @@ function provider(flow, userId = 123, email = 'owner@example.test', verified = t
   let calls = 0;
   return async (url, options) => {
     calls++;
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     if (url === 'https://github.com/login/oauth/access_token') {
       const body = new URLSearchParams(options.body);
       const actual = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body.get('code_verifier')))).toString('base64url');
@@ -71,7 +71,9 @@ test('anonymous HTML navigations get a login page while APIs remain 401 without 
   assert.equal((await handleRequest(request('/api/admin/summary'), configuration, { now })).status, 401);
   const login = await handleRequest(request('/auth/login?next=//attacker.test'), configuration, { now });
   assert.equal(login.status, 200);
+  assert.equal(login.headers.get('Referrer-Policy'), 'same-origin');
   assert.match(login.headers.get('Content-Security-Policy'), /default-src 'none'/);
+  assert.match(login.headers.get('Content-Security-Policy'), /form-action 'self' https:\/\/github.com\/login\/oauth\/authorize;/);
   assert.ok(!(await login.text()).includes('attacker.test'));
 });
 
@@ -157,4 +159,18 @@ test('duplicate cookies, provider failures and wrong deployment origin fail clos
   assert.equal(failed.status, 503);
   assert.ok(!(await failed.text()).includes('sensitive'));
   assert.equal((await handleRequest(new Request('https://preview.example.test/auth/login'), configuration, { now })).status, 503);
+});
+
+test('provider redirects never forward the client secret or bearer token to another URL', async () => {
+  const configuration = setup(), flow = await begin(configuration);
+  const destinations = [];
+  const response = await handleRequest(request(`/auth/callback?state=${flow.state}&code=test-code`, 'GET', undefined, { Cookie: flow.cookie }), configuration,
+    { now, fetcher: async (url, options) => {
+      destinations.push(url);
+      assert.equal(options.redirect, 'manual');
+      return new Response(null, { status: 302, headers: { Location: 'https://untrusted.example/collect-token' } });
+    } });
+  assert.equal(response.status, 503);
+  assert.deepEqual(destinations, ['https://github.com/login/oauth/access_token']);
+  assert.equal(configuration.DB.sqlite.prepare('SELECT COUNT(*) AS n FROM auth_sessions').get().n, 0);
 });

@@ -1,3 +1,2 @@
-/* Updated only after a verified free backend deployment */
-window.ORVANTRO_CENTRAL = { site: 'orvantro-insights', endpoint: '', enabled: false };
-window.INSIGHTS_CENTRAL = { baseUrl: '' };
+window.ORVANTRO_CENTRAL = { site: 'orvantro-insights', endpoint: 'https://orvantro-insights-api.orvantro.workers.dev/collect', enabled: true };
+window.INSIGHTS_CENTRAL = { baseUrl: 'https://orvantro-insights-api.orvantro.workers.dev' };
