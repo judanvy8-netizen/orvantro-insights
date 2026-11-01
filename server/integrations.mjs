@@ -92,15 +92,20 @@ function label(value) {
 }
 export async function dailyReport(env, now) {
   const reportDay=day(now-DAY);
-  const [totals,sites,countries,devices,integrations] = await Promise.all([
+  const [totals,sites,countries,devices,integrations,collection] = await Promise.all([
     rows(env,'SELECT COUNT(*) AS pageviews,COUNT(DISTINCT session_key) AS sessions FROM analytics_events WHERE day=?1',reportDay),
     rows(env,'SELECT site,COUNT(*) AS pageviews,COUNT(DISTINCT session_key) AS sessions FROM analytics_events WHERE day=?1 GROUP BY site ORDER BY pageviews DESC',reportDay),
     rows(env,'SELECT country AS value,COUNT(*) AS pageviews FROM analytics_events WHERE day=?1 GROUP BY country ORDER BY pageviews DESC LIMIT 20',reportDay),
     rows(env,'SELECT device AS value,COUNT(*) AS pageviews FROM analytics_events WHERE day=?1 GROUP BY device ORDER BY pageviews DESC',reportDay),
     state(env,now),
+    rows(env,'SELECT MIN(first_received_at) AS first FROM analytics_collection'),
   ]);
-  const lines=[`ORVANTRO 일일 운영 요약 · ${reportDay} (한국 시간)`,'',`페이지 조회 ${totals[0].pageviews}회 · 일별 방문 세션 ${totals[0].sessions}회`,
-    '동의한 브라우저의 수신 성공 기록 기준 · 방문 세션은 고유 사람 수가 아님','', '사이트별',...sites.map(r=>`${r.site}: ${r.pageviews}회 / 세션 ${r.sessions}회`),'', '접속 국가 (접속망 기준)',...countries.map(r=>`${label(r.value)}: ${r.pageviews}회`),'','기기 (추정)',...devices.map(r=>`${label(r.value)}: ${r.pageviews}회`),'','SNS 최신 현황 (일일 증가량이 아닌 누적 규모)'];
+  const collected=collection[0]?.first!=null && reportDay>=day(collection[0].first);
+  const lines=[`ORVANTRO 일일 운영 요약 · ${reportDay} (한국 시간)`,'',
+    collected ? `페이지 조회 ${totals[0].pageviews}회 · 일별 방문 세션 ${totals[0].sessions}회` : '집계 시작 전 · 방문 수를 확인할 수 없음',
+    '동의한 브라우저의 수신 성공 기록 기준 · 방문 세션은 고유 사람 수가 아님'];
+  if(collected) lines.push('', '사이트별',...sites.map(r=>`${r.site}: ${r.pageviews}회 / 세션 ${r.sessions}회`),'', '접속 국가 (접속망 기준)',...countries.map(r=>`${label(r.value)}: ${r.pageviews}회`),'','기기 (추정)',...devices.map(r=>`${label(r.value)}: ${r.pageviews}회`));
+  lines.push('','SNS 최신 현황 (일일 증가량이 아닌 누적 규모)');
   for(const channel of integrations.channels) {
     lines.push(`${channel.name}: ${channel.metrics ? Object.entries(channel.metrics).map(([key,value])=>`${LABELS[key] || key} ${value==null?'비공개':value}`).join(' · ') : '수집 기록 없음'}`);
     lines.push(`상태 ${channel.status} · 마지막 성공 ${channel.lastSuccess || '없음'} · ${channel.note}`);

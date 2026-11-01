@@ -64,3 +64,12 @@ test('owner can pause email but cross-origin mutations fail and paused reports c
   const bad=await admin('/api/admin/report/settings',{enabled:true});bad.headers.set('Origin','https://evil.test');assert.equal((await handleRequest(bad,e,{now,fetcher})).status,403);
   const state=await(await handleRequest(await admin('/api/admin/integrations'),e,{now,fetcher})).json();assert.equal(state.email.enabled,false);assert.equal(state.channels.find(c=>c.id==='x').status,'cost_approval_required');
 });
+test('daily report distinguishes uncollected history from observed visits and later zero days',async()=>{
+  const e=env(),DAY=86400000;
+  assert.match((await dailyReport(e,now)).text,/집계 시작 전/);
+  await handleRequest(located('Mozilla/5.0 (Windows NT 10.0)','KR'),e,{now});
+  const before=(await dailyReport(e,now)).text;
+  assert.match(before,/집계 시작 전/);assert.doesNotMatch(before,/페이지 조회 0회/);
+  assert.match((await dailyReport(e,now+DAY)).text,/페이지 조회 1회 · 일별 방문 세션 1회/);
+  assert.match((await dailyReport(e,now+2*DAY)).text,/페이지 조회 0회 · 일별 방문 세션 0회/);
+});
