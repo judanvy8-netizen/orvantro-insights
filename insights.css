@@ -431,6 +431,9 @@ a:hover { text-decoration: underline; }
   word-break: keep-all;
 }
 
+/* Author display:grid must not override the hidden empty-state indicator. */
+.chart-empty[hidden] { display: none; }
+
 .bars { display: flex; flex-direction: column; gap: 8px; }
 .bar-row {
   display: grid;

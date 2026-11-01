@@ -26,9 +26,18 @@
 
     <section class="hero" aria-label="Insights 소개">
       <div class="hero-brand">ORVANTRO</div>
-      <h1>Insights — 내 브라우저 기록을 살펴봅니다</h1>
-      <p>선택해 켠 로컬 방문 기록과 직접 가져온 JSON을 확인합니다. 이 페이지는 전체 방문자 통계나 관리자 전용 콘솔이 아닙니다.</p>
+      <h1>Insights — 데이터 출처부터 확인합니다</h1>
+      <p>기록을 켜지 않아도 샘플을 탐색하거나 JSON을 가져와 분석할 수 있습니다. 로컬 기록은 선택 기능입니다. 이 페이지는 전체 방문자 통계나 관리자 전용 콘솔이 아닙니다.</p>
       <div class="notice">기록은 기본적으로 꺼져 있습니다. 켜면 이 브라우저의 같은 출처에 페이지 이름과 시각만 최대 800개·최근 30일 범위로 저장합니다. 외부 분석 서버, 위치 조회, 방문자 식별자는 사용하지 않습니다. <strong>orvantro.com과 github.io의 기록은 분리됩니다.</strong> 통합 이전의 FeeROI·SellerBill·Markit 기록은 이전 제품 이름으로 유지합니다.</div>
+    </section>
+    <section class="panel" aria-label="현재 데이터 출처" style="margin-bottom:18px">
+      <h2 id="sourceStatus" role="status">데이터 확인 중 / Loading</h2>
+      <p class="lead" id="sourceScope">데이터 출처를 확인하고 있습니다.</p>
+      <div class="actions-row">
+        <button type="button" class="btn btn-primary" id="btnUseSample">기록 없이 샘플 둘러보기 / Explore demo</button>
+        <a class="btn btn-ghost" href="#importPanel">JSON 파일 내용 가져오기 / Import</a>
+      </div>
+      <p class="help-note">현재는 선택한 데이터의 진단 도구입니다. 전체 사이트·고객의 통합 통계에는 별도 수집 서버와 관리자 인증이 필요하며, 지금 연결되어 있지 않습니다.</p>
     </section>
     <section class="panel" aria-label="로컬 기록 설정" style="margin-bottom:18px">
       <h2>로컬 기록 설정</h2>
@@ -43,7 +52,7 @@
 
     <div class="empty-guide" id="emptyGuide" hidden>
       <strong>아직 이 브라우저에 수집된 이벤트가 없습니다.</strong><br>
-      위에서 로컬 기록을 켠 후 같은 출처의 제품을 방문하면 기록이 쌓입니다. 다른 기기나 다른 출처의 방문은 이곳에 나타나지 않습니다. 샘플 데이터는 아래 버튼을 눌러 볼 수 있습니다.
+      데이터가 없다는 뜻이지 실제 방문자가 0명이라는 뜻은 아닙니다. 기록을 켜지 않고도 위의 샘플 또는 JSON 가져오기를 사용할 수 있습니다. 로컬 기록을 선택해 켜도 다른 기기·출처의 방문은 나타나지 않습니다.
     </div>
 
     <div class="filters" aria-label="필터">
@@ -73,7 +82,6 @@
 
     <div class="actions-row">
       <button type="button" class="btn btn-primary" id="btnLive">로컬 기록</button>
-      <button type="button" class="btn btn-ghost" id="btnUseSample">샘플 보기</button>
       <button type="button" class="btn btn-ghost" id="btnImport">JSON 가져오기 (선택)</button>
       <button type="button" class="btn btn-ghost" id="btnClearImport">가져오기 지우기</button>
     </div>
@@ -174,11 +182,11 @@
       </section>
       <section class="panel" aria-label="고유·중복 체크">
         <h2>고유 탐지 상세</h2>
-        <p class="lead">가져온 식별자 기준 집계입니다. 로컬 기록은 방문자를 식별하지 않으며 고유·재방문 수는 미수집입니다.</p>
+        <p class="lead">가져온 JSON 또는 샘플의 식별자 기준입니다. 상태 미상은 신규로 간주하지 않으며 재방문율 분모에서 제외합니다. 기간 내 신규·재방문이 모두 관측된 식별자는 재방문으로 한 번 집계합니다. 로컬 기록은 방문자를 식별하지 않습니다.</p>
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>제품</th><th>PV</th><th>고유</th><th>신규</th><th>재방문</th><th>재방문율</th></tr>
+              <tr><th>제품</th><th>PV</th><th>고유</th><th>신규</th><th>재방문</th><th>미상</th><th>재방문율</th></tr>
             </thead>
             <tbody id="uniqTableBody"></tbody>
           </table>
@@ -186,10 +194,10 @@
       </section>
     </div>
 
-    <section class="panel" style="margin-bottom:14px" aria-label="선택적 JSON">
+    <section class="panel" style="margin-bottom:14px" aria-label="선택적 JSON" id="importPanel">
       <h2>선택 · JSON 가져오기</h2>
       <p class="lead">
-        2MB 이하·최대 10,000개 이벤트 JSON을 붙여 넣을 수 있습니다.
+        UTF-8 2MB 이하·최대 10,000개 이벤트 JSON을 붙여 넣을 수 있습니다.
         <strong>Amplitude API Secret / GA4 키는 필요하지 않으며 UI에도 없습니다.</strong>
       </p>
       <div class="import-box">
@@ -197,6 +205,9 @@
           <label for="importJson">JSON 붙여넣기 (선택)</label>
           <textarea id="importJson" placeholder='[{"t":"2026-10-27T00:00:00Z","type":"orvantro_pageview","site":"marginkit-pro-beta"}]'></textarea>
         </div>
+        <div class="actions-row"><button type="button" class="btn btn-primary" id="btnImportHere">붙여넣은 JSON 분석 / Analyze JSON</button></div>
+        <p class="status-line" id="importFeedback" role="status" aria-live="polite"></p>
+        <p class="help-note">필수: t(Unix 밀리초 또는 ISO 날짜), type(pageview 또는 orvantro_*). 배열 또는 {"events": [...]} 형식을 사용하세요. 미래 날짜와 잘못된 행은 제외됩니다. returning은 true/false만 인정하며, engaged_ms는 0~86,400,000ms만 참여 시간에 포함합니다. 값이 없으면 미수집으로 남습니다.</p>
         <p class="help-note">
           가져온 JSON은 현재 페이지 메모리에서만 처리하며 새로고침하면 지워집니다. 로컬 기록과 섞거나 서버로 보내지 않습니다. 개인정보와 비밀값은 붙여 넣지 마세요.
         </p>

@@ -107,7 +107,7 @@ const row = (extra = {}) => ({ t: Date.now() - 1000, type: 'orvantro_pageview', 
   });
   await check('import strips URL query/hash, invalid durations and non-string values', () => {
     const e = environment(); const t = loadInsights(e); const rows = t.normalizeImported([row({ path: '/report?token=SECRET#secret', referrer: 'https://example.com/private?token=SECRET', engaged_ms: 'Infinity', country_code: {} })]);
-    assert.equal(rows[0].path, '/report'); assert.equal(rows[0].referrer, 'https://example.com'); assert.equal(rows[0].engaged_ms, 0); assert.equal(rows[0].country_code, '');
+    assert.equal(rows[0].path, '/report'); assert.equal(rows[0].referrer, 'https://example.com'); assert.equal(rows[0].engaged_ms, null); assert.equal(rows[0].country_code, '');
   });
   await check('import and sample remain distinct from local data and never auto-save', () => {
     const e = environment(); loadTracker(e); const t = loadInsights(e);
@@ -118,7 +118,7 @@ const row = (extra = {}) => ({ t: Date.now() - 1000, type: 'orvantro_pageview', 
   });
   await check('full Insights boot and local controls render without network', async () => {
     const e = environment(); loadTracker(e); const t = loadInsights(e); await t.boot();
-    assert.equal(e.nodes.get('kpiPageviews').textContent, '0'); assert.equal(e.nodes.get('kpiVisitors').textContent, '미수집');
+    assert.equal(e.nodes.get('kpiPageviews').textContent, '—'); assert.equal(e.nodes.get('kpiVisitors').textContent, '미수집');
     e.nodes.get('btnEnableLocal').handlers.click(); await new Promise(r => setTimeout(r, 0));
     assert.equal(e.OrvantroAnalytics.isEnabled(), true); assert.equal(e.nodes.get('kpiPageviews').textContent, '1');
     e.nodes.get('btnDisableLocal').handlers.click(); assert.equal(e.OrvantroAnalytics.isEnabled(), false); assert.equal(e.net.length, 0);

@@ -16,6 +16,7 @@
     events: [],
     imported: [],
     forceSample: false,
+    sourceRevision: 0,
     filters: { range: 14, product: 'all', country: 'all' }
   };
 
@@ -93,23 +94,27 @@
       if (!Number.isFinite(t) || t <= 0 || t > Date.now()) return null;
       var type = text(e.type || e.event_type, 60);
       if (!/^orvantro_[a-z_]+$/.test(type) && type !== 'pageview') return null;
-      var cc = text(props.country_code || e.country_code, 2).toUpperCase();
-      if (!/^[A-Z]{2}$/.test(cc)) cc = '';
+      var cc = text(props.country_code || e.country_code, 80);
+      cc = /^[A-Za-z]{2}$/.test(cc) ? cc.toUpperCase() : '';
       var path = text(props.path || e.path, 200).split(/[?#]/)[0];
       var referrer = '';
       try { var url = new URL(text(props.referrer || e.referrer, 2000));
         if (url.protocol === 'https:' || url.protocol === 'http:') referrer = url.origin;
       } catch (ignore) { /* no valid referrer */ }
-      var ms = Number(props.engaged_ms != null ? props.engaged_ms : e.engaged_ms);
+      var rawMs = props.engaged_ms != null ? props.engaged_ms : e.engaged_ms;
+      var ms = typeof rawMs === 'number' || (typeof rawMs === 'string' && rawMs.trim() !== '') ? Number(rawMs) : NaN;
+      var returnValue = props.visitor_returning;
+      if (typeof returnValue !== 'boolean') returnValue = props.returning;
+      if (typeof returnValue !== 'boolean') returnValue = e.returning;
       return {
         t: t, type: type, site: text(props.site || e.site, 80) || 'unknown', path: path || '/',
-        returning: props.visitor_returning === true || e.returning === true,
+        returning: typeof returnValue === 'boolean' ? returnValue : null,
         country_code: cc, country: text(props.country || e.country, 80),
         device_type: text(props.device_type || e.device_type, 30), referrer: referrer,
         utm_source: text(props.utm_source || e.utm_source, 80),
         utm_medium: text(props.utm_medium || e.utm_medium, 80),
         utm_campaign: text(props.utm_campaign || e.utm_campaign, 80),
-        engaged_ms: Number.isFinite(ms) && ms >= 0 && ms <= 86400000 ? ms : 0,
+        engaged_ms: Number.isFinite(ms) && ms >= 0 && ms <= 86400000 ? ms : null,
         visitor_id: text(e.user_id || e.visitor_id || e.device_id || props.visitor_id, 120),
         session_id: text(props.session_id || e.session_id, 120), _sample: e._sample === true
       };
@@ -180,8 +185,8 @@
       var vid = e.visitor_id;
       if (vid) {
         visitors[vid] = true;
-        if (e.returning) returningVisitors[vid] = true;
-        else newVisitors[vid] = true;
+        if (e.returning === true) returningVisitors[vid] = true;
+        else if (e.returning === false) newVisitors[vid] = true;
       }
 
       var dk = dayKey(e.t);
@@ -203,8 +208,8 @@
         byUtm[uk] = (byUtm[uk] || 0) + 1;
       }
 
-      if (e.engaged_ms) {
-        var ms = Number(e.engaged_ms) || 0;
+      if (typeof e.engaged_ms === 'number' && Number.isFinite(e.engaged_ms) && e.engaged_ms >= 0 && e.engaged_ms <= 86400000) {
+        var ms = e.engaged_ms;
         engageSum += ms;
         engageN += 1;
         if (ms < 5000) engageBuckets['0–5s'] += 1;
@@ -216,9 +221,11 @@
 
     var unique = Object.keys(visitors).length;
     var returning = Object.keys(returningVisitors).length;
-    var brandNew = Object.keys(newVisitors).length;
-    var returningRate = unique ? returning / unique : 0;
-    var short = pageviews.filter(function (e) { return e.engaged_ms > 0 && e.engaged_ms < 5000; }).length;
+    // A visitor observed both new and returning is counted once, as returning.
+    var brandNew = Object.keys(newVisitors).filter(function (id) { return !returningVisitors[id]; }).length;
+    var knownVisitors = returning + brandNew;
+    var returningRate = knownVisitors ? returning / knownVisitors : null;
+    var short = engageBuckets['0–5s'];
     var bounceProxy = engageN ? short / engageN : null;
 
     return {
@@ -226,6 +233,8 @@
       unique: unique,
       returning: returning,
       brandNew: brandNew,
+      knownVisitors: knownVisitors,
+      unknownVisitors: unique - knownVisitors,
       returningRate: returningRate,
       byDay: byDay,
       bySite: bySite,
@@ -235,7 +244,7 @@
       byDevice: byDevice,
       byUtm: byUtm,
       engageBuckets: engageBuckets,
-      avgEngage: engageN ? engageSum / engageN : 0,
+      avgEngage: engageN ? engageSum / engageN : null,
       bounceProxy: bounceProxy,
       engageN: engageN
     };
@@ -289,7 +298,7 @@
 
     if (agg.returningRate >= 0.45) {
       notes.push({ title: '재방문 양호', body: '재방문 비율이 높습니다. 제품 고착(habit) 신호가 있습니다.' });
-    } else if (agg.unique > 0) {
+    } else if (agg.knownVisitors > 0) {
       notes.push({ title: '신규 비중', body: '고유 방문 대비 재방문이 낮습니다. 온보딩·재방문 유도가 기회입니다.' });
     }
 
@@ -331,7 +340,9 @@
   }
 
   function drawTrend(canvas, byDay, forecast) {
-    var ctx = canvas.getContext('2d');
+    var ctx;
+    try { ctx = canvas.getContext('2d'); } catch (e) { return false; }
+    if (!ctx) return false;
     var w = canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
     var h = canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
     ctx.clearRect(0, 0, w, h);
@@ -468,6 +479,11 @@
 
 
   function render() {
+    fillProductFilter();
+    // Validate against the whole selected dataset before filtering, not afterwards.
+    if (state.filters.country !== 'all' && !state.events.some(function (e) {
+      return e.country_code === state.filters.country;
+    })) state.filters.country = 'all';
     var filtered = filterEvents(state.events);
     var agg = aggregate(filtered);
     var horizon = state.filters.range >= 14 ? 14 : 7;
@@ -475,17 +491,20 @@
     var notes = prospectNotes(agg, forecast);
 
     $('kpiVisitors').textContent = agg.unique ? String(agg.unique) : '미수집';
-    $('kpiPageviews').textContent = String(agg.pageviews);
-    $('kpiReturning').textContent = agg.unique ? Math.round(agg.returningRate * 100) + '%' : '미수집';
-    $('kpiEngage').textContent = agg.avgEngage ? (Math.round(agg.avgEngage / 1000) + 's') : '—';
-    $('kpiVisitorsHint').textContent = agg.unique ? '가져온 식별자 기준 · 실제 인원수와 다를 수 있음' : '로컬 기록에는 고유 방문자 정보가 없습니다';
-    $('kpiPageviewsHint').textContent = '현재 선택한 데이터의 페이지뷰 · 전체 방문자 통계 아님';
-    $('kpiReturningHint').textContent = agg.unique ? '가져온 식별자가 있는 기록만 집계' : '로컬 기록은 방문자를 식별하지 않습니다';
-    $('kpiEngageHint').textContent = agg.engageN ? '참여 시간 값이 있는 페이지뷰만 집계' : '참여 시간을 수집하지 않습니다';
+    $('kpiPageviews').textContent = state.mode === 'empty' ? '—' : String(agg.pageviews);
+    $('kpiReturning').textContent = agg.knownVisitors ? Math.round(agg.returningRate * 100) + '%' : '미수집';
+    $('kpiEngage').textContent = agg.engageN ? (Math.round(agg.avgEngage / 1000) + 's') : '—';
+    $('kpiVisitorsHint').textContent = agg.unique ? (state.mode === 'sample' ? '샘플 식별자 · 실제 방문자 아님' : '가져온 식별자 기준 · 실제 인원수와 다를 수 있음') : '선택한 기록에 고유 방문자 정보가 없습니다';
+    $('kpiPageviewsHint').textContent = state.mode === 'empty' ? '분석할 데이터 없음 · 실제 방문 0건이라는 뜻이 아님' : '현재 데이터와 필터에 일치하는 페이지뷰 · 전체 방문자 통계 아님';
+    $('kpiReturningHint').textContent = agg.unique ? '신규·재방문 확인 식별자만 분모에 포함 · 미상 ' + agg.unknownVisitors + '명' : '선택한 기록에 방문자 식별자가 없습니다';
+    $('kpiEngageHint').textContent = agg.engageN ? '0초 포함 · 유효한 참여 시간 값이 있는 페이지뷰만 집계' : '참여 시간을 수집하지 않습니다';
 
     var canvas = $('trendChart');
+    // Empty mode hides the canvas; reveal it before reading layout dimensions.
+    canvas.style.display = 'block';
     var ok = drawTrend(canvas, agg.byDay, forecast);
     $('trendEmpty').hidden = ok;
+    $('trendEmpty').textContent = agg.pageviews && !ok ? '차트를 표시할 수 없습니다. 아래 표와 지표에서 데이터를 확인하세요.' : '표시할 추세가 없습니다. 기간·필터를 바꿔 보세요.';
     canvas.style.display = ok ? 'block' : 'none';
 
     renderBars($('siteBars'), agg.bySite, function (k) { return productLabel(k); });
@@ -515,24 +534,14 @@
       var siteEvents = filtered.filter(function (e) {
         return (e.type === 'orvantro_pageview' || e.type === 'pageview') && e.site === site;
       });
-      var vids = Object.create(null);
-      var ret = Object.create(null);
-      var neu = Object.create(null);
-      siteEvents.forEach(function (e) {
-        var id = e.visitor_id;
-        if (!id) return;
-        vids[id] = true;
-        if (e.returning) ret[id] = true;
-        else neu[id] = true;
-      });
-      var u = Object.keys(vids).length;
-      var r = Object.keys(ret).length;
-      var n = Object.keys(neu).length;
+      var siteAgg = aggregate(siteEvents);
+      var u = siteAgg.unique;
       return '<tr><td>' + escapeHtml(productLabel(site)) + '</td><td>' + siteEvents.length +
-        '</td><td>' + (u || '—') + '</td><td>' + (u ? n : '—') + '</td><td>' + (u ? r : '—') + '</td><td>' +
-        (u ? Math.round((r / u) * 100) + '%' : '—') + '</td></tr>';
+        '</td><td>' + (u || '—') + '</td><td>' + (u ? siteAgg.brandNew : '—') + '</td><td>' + (u ? siteAgg.returning : '—') +
+        '</td><td>' + (u ? siteAgg.unknownVisitors : '—') + '</td><td>' +
+        (siteAgg.knownVisitors ? Math.round(siteAgg.returningRate * 100) + '%' : '—') + '</td></tr>';
     }).join('');
-    $('uniqTableBody').innerHTML = uniqRows || '<tr><td colspan="6">데이터 없음</td></tr>';
+    $('uniqTableBody').innerHTML = uniqRows || '<tr><td colspan="7">데이터 없음</td></tr>';
 
     var forecastRows = forecast.map(function (f) {
       return '<tr><td>' + f.day + ' <span class="est-tag">추정</span></td><td>' + f.value + '</td></tr>';
@@ -571,6 +580,15 @@
     var enabled = !!(api && api.isEnabled());
     $('btnEnableLocal').disabled = enabled;
     $('btnDisableLocal').disabled = !enabled;
+    var sourceLabels = { empty: '데이터 없음 / NO DATA', live: '이 브라우저 기록 / LOCAL', imported: '가져온 JSON / IMPORTED', sample: '샘플 데이터 / DEMO — 실제 통계 아님' };
+    $('sourceStatus').textContent = sourceLabels[state.mode];
+    $('sourceScope').textContent = state.mode === 'sample'
+      ? '화면 탐색용 가상 데이터입니다. 실제 방문·성과가 아니며, 로컬 기록을 켜지 않아도 사용할 수 있습니다.'
+      : state.mode === 'imported'
+        ? '가져온 JSON만 분석합니다. 파일의 진위·누락 여부는 확인하지 않으며 로컬 기록과 합치지 않습니다. 샘플 표시 ' + state.imported.filter(function (e) { return e._sample; }).length + '개 — 샘플 표시가 없어도 실제 기록이라는 보장은 없습니다.'
+        : state.mode === 'live'
+          ? '이 브라우저·같은 출처의 저장된 기록만 표시합니다. 다른 기기나 전체 고객의 통계가 아닙니다. 새 기록: ' + (enabled ? '켜짐 / ON' : '꺼짐 / OFF')
+          : '분석할 기록이 없습니다. 방문자가 0명이라는 의미가 아닙니다. 샘플 탐색과 JSON 가져오기는 기록을 켜지 않아도 가능합니다.';
     $('privacyStatus').textContent = enabled
       ? '이 브라우저의 같은 출처에서 로컬 기록이 켜져 있습니다. 외부 전송 없음.'
       : '로컬 기록 꺼짐. 자동 방문 수집과 외부 분석 전송을 하지 않습니다.';
@@ -609,7 +627,7 @@
     state.mode = 'empty';
     state.events = [];
     setStatus(
-      '로컬 기록이 없습니다. 기록을 켜거나 JSON을 가져올 수 있습니다. 샘플은 「샘플 보기」를 눌렀을 때만 표시합니다.',
+      '로컬 기록이 없습니다. 기록을 켜거나 JSON을 가져올 수 있습니다. 샘플은 위의 「기록 없이 샘플 둘러보기」를 눌렀을 때만 표시합니다.',
       'warn',
       false
     );
@@ -624,30 +642,50 @@
   }
 
   function importJson() {
-    var text = $('importJson').value.trim();
+    var rawText = $('importJson').value;
+    var text = rawText.trim();
+    var feedback = $('importFeedback');
     if (!text) {
-      setStatus('붙여넣을 JSON이 비어 있습니다.', 'bad', false);
+      feedback.textContent = 'JSON이 비어 있습니다. 현재 데이터는 유지됩니다.';
+      feedback.dataset.tone = 'bad';
       return;
     }
+    var events, skipped;
     try {
-      if (text.length > 2000000) throw new Error('too large');
+      // Bound the original UTF-8 input, including whitespace, before parsing.
+      if (rawText.length > 2000000 || new TextEncoder().encode(rawText).byteLength > 2000000) throw new Error('too large');
       var parsed = JSON.parse(text);
-      var events = normalizeImported(parsed);
+      events = normalizeImported(parsed);
       if (!events.length) throw new Error('empty');
-      state.imported = events;
-      state.forceSample = false;
-      reloadData();
-      setStatus(events.length + '개 이벤트를 가져왔습니다.', 'ok', false);
+      var inputRows = Array.isArray(parsed) ? parsed : (parsed.events || parsed.data);
+      skipped = inputRows.length - events.length;
     } catch (e) {
-      setStatus('유효한 이벤트가 없습니다. 2MB 이하, 최대 10,000개 이벤트와 올바른 날짜를 확인하세요.', 'bad', false);
+      feedback.textContent = '가져오지 못했습니다. UTF-8 2MB 이하, 최대 10,000개 이벤트와 올바른 JSON·날짜를 확인하세요. 현재 데이터는 유지됩니다.';
+      feedback.dataset.tone = 'bad';
+      return;
+    }
+    // Only validation failure preserves the old data; rendering is a separate step.
+    state.sourceRevision += 1;
+    state.imported = events;
+    state.forceSample = false;
+    chooseDatasetFrom([]);
+    try {
+      render();
+      feedback.textContent = events.length + '개 사용 · ' + skipped + '개 제외 (잘못된 형식·날짜·이벤트). 선택한 기간과 필터에 따라 표시 수가 달라집니다.';
+      feedback.dataset.tone = skipped ? 'warn' : 'ok';
+    } catch (e) {
+      feedback.textContent = events.length + '개 이벤트를 메모리에 가져왔지만 화면 표시 중 오류가 발생했습니다. 이전 데이터로 되돌린 상태는 아닙니다.';
+      feedback.dataset.tone = 'warn';
     }
   }
 
   function clearImport() {
+    state.sourceRevision += 1;
     state.imported = [];
     $('importJson').value = '';
+    $('importFeedback').textContent = '';
     state.forceSample = false;
-    reloadData();
+    return reloadData();
   }
 
   function wireFilters() {
@@ -666,9 +704,18 @@
   }
 
   function fillProductFilter() {
-    $('filterProduct').innerHTML = PRODUCTS.map(function (p) {
-      return '<option value="' + p.id + '">' + p.label + '</option>';
+    var products = PRODUCTS.slice();
+    var known = Object.create(null);
+    products.forEach(function (p) { known[p.id] = true; });
+    state.events.forEach(function (event) {
+      var id = event.site || 'unknown';
+      if (!known[id]) { known[id] = true; products.push({ id: id, label: id + ' (가져온 제품)' }); }
+    });
+    if (!known[state.filters.product]) state.filters.product = 'all';
+    $('filterProduct').innerHTML = products.map(function (p) {
+      return '<option value="' + escapeHtml(p.id) + '">' + escapeHtml(p.label) + '</option>';
     }).join('');
+    $('filterProduct').value = state.filters.product;
   }
 
   window.orvantroSubmitFeedback = function (form) {
@@ -694,6 +741,7 @@
     fillProductFilter();
     wireFilters();
     $('btnEnableLocal').addEventListener('click', function () {
+      state.sourceRevision += 1;
       var enabled = window.OrvantroAnalytics && OrvantroAnalytics.setEnabled(true);
       state.forceSample = false;
       state.imported = [];
@@ -705,23 +753,31 @@
     });
     $('btnClearLocal').addEventListener('click', async function () {
       if (!window.confirm('이 출처의 로컬 방문 기록과 이전 분석 식별자를 지울까요? 제품의 원가·계산 데이터는 유지됩니다.')) return;
+      var clearRevision = ++state.sourceRevision;
       var ok = await OrvantroAnalytics.clearRing();
+      // A newer source selection wins while legacy IndexedDB deletion is pending.
+      if (clearRevision !== state.sourceRevision) { await reloadData(); return; }
       state.forceSample = false; state.imported = []; $('importJson').value = '';
+      $('importFeedback').textContent = '';
       await reloadData();
       setStatus(ok ? '이 출처의 분석 기록을 지웠습니다.' : '일부 이전 기록을 지우지 못했습니다. 같은 출처의 다른 탭을 닫은 후 다시 시도하세요.', ok ? 'ok' : 'warn');
     });
     $('btnImport').addEventListener('click', importJson);
+    $('btnImportHere').addEventListener('click', importJson);
     $('btnClearImport').addEventListener('click', clearImport);
     $('btnRefresh').addEventListener('click', async function () {
+      state.sourceRevision += 1;
       state.forceSample = false;
       await reloadData();
     });
     $('btnLive').addEventListener('click', async function () {
+      state.sourceRevision += 1;
       state.forceSample = false;
       state.imported = [];
       await reloadData();
     });
     $('btnUseSample').addEventListener('click', function () {
+      state.sourceRevision += 1;
       state.forceSample = true;
       chooseDatasetFrom([]);
       render();
