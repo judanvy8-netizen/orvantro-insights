@@ -1,6 +1,7 @@
 import { HttpError, json, readLimited } from './http.mjs';
 import { authorize } from './auth.mjs';
 import { handlePremium } from './premium.mjs';
+import { handleGithubAuth, pruneAuth } from './github-auth.mjs';
 export { authorize, verifyIdentity } from './auth.mjs';
 
 const RETENTION_DAYS = 30;
@@ -166,6 +167,13 @@ export async function handleRequest(request, env, options = {}) {
   const fetcher = options.fetcher || fetch;
   const url = new URL(request.url);
   try {
+    if (url.pathname.startsWith('/auth/')) {
+      if (env.AUTH_PROVIDER !== 'github') {
+        if (url.pathname === '/auth/logout') return new Response(null, { status: 303, headers: { Location: '/cdn-cgi/access/logout', 'Cache-Control': 'no-store' } });
+        throw new HttpError(404, 'not_found');
+      }
+      return await handleGithubAuth(request, env, { now, fetcher });
+    }
     if (url.pathname === '/api/workspaces' || url.pathname.startsWith('/api/workspaces/') || url.pathname === '/workspace' || url.pathname.startsWith('/workspace/')) {
       return await handlePremium(request, env, { now, fetcher });
     }
@@ -189,6 +197,10 @@ export async function handleRequest(request, env, options = {}) {
     throw new HttpError(404, 'not_found');
   } catch (error) {
     const expected = error instanceof HttpError;
+    if (env.AUTH_PROVIDER === 'github' && expected && error.status === 401 && request.method === 'GET' &&
+        ['/admin', '/admin/', '/workspace', '/workspace/'].includes(url.pathname)) {
+      return new Response(null, { status: 303, headers: { Location: `/auth/login?next=${url.pathname.startsWith('/workspace') ? 'workspace' : 'admin'}`, 'Cache-Control': 'no-store' } });
+    }
     // Never log requests, payloads, JWTs, identifiers or provider error text.
     return json({ error: expected ? error.code : 'storage_unavailable' }, expected ? error.status : 503,
       url.pathname === '/collect' ? cors(originOf(request)) : url.pathname === '/api/public/summary' ? { 'Access-Control-Allow-Origin': '*' } : {});
@@ -201,6 +213,7 @@ export async function pruneExpired(env, now = Date.now()) {
   // Bounded hourly work; queries already exclude expired rows if cleanup is delayed.
   await env.DB.prepare(`DELETE FROM analytics_events WHERE event_key IN
     (SELECT event_key FROM analytics_events WHERE day < ?1 ORDER BY day LIMIT 5000)`).bind(oldest).run();
+  await pruneAuth(env, now);
 }
 
 export default {

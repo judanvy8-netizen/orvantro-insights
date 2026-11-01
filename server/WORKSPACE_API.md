@@ -6,6 +6,14 @@ No paid service, billing flow, external seller connector or email delivery is ac
 
 ## Authentication and access
 
+The selected GitHub configuration uses `AUTH_PROVIDER=github`, the exact `AUTH_ORIGIN`, a registered OAuth client and the owner numeric GitHub ID, with the client secret kept only in Worker Secrets
+
+GitHub login verifies a stable account ID and verified primary email using PKCE and a one-time state, then issues an eight-hour server session
+
+Only the pinned owner can create workspaces in this mode; additional users must first be invited to a workspace and can use only their assigned roles
+
+The following Access-specific configuration is an optional alternative, not a requirement for GitHub login
+
 - Require `DB`, `ACCESS_TEAM_DOMAIN` and a distinct `PREMIUM_ACCESS_AUD`
 - `PREMIUM_ACCESS_AUD` must differ from the Insights `ACCESS_AUD`
 - Protect `/workspace*` and `/api/workspaces*` with the workspace Access application and its intended user policy

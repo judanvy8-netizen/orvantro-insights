@@ -1,6 +1,6 @@
 # ORVANTRO 중앙 통계와 팀 작업공간 배포 안내
 
-현재 사용자는 Cloudflare 또는 다른 서버 계정을 연결하지 않은 상태이며 이 저장소의 서버는 운영 배포되지 않음
+선택한 운영 구성은 Cloudflare Workers Free + D1과 GitHub 로그인이며 Zero Trust 결제 활성화를 사용하지 않음
 
 코드와 로컬 검증이 준비되어 있어도 실제 로그인, 중앙 통계 수집, 계정 간 저장은 서버를 배포하고 아래 검증을 마친 뒤에만 사용할 수 있음
 
@@ -23,7 +23,7 @@ API, 권한, 데이터 제한, 보관 방식의 상세 계약은 [server/README.
 
 ```powershell
 node --version
-node --test server/tests/worker.test.mjs server/tests/premium.test.mjs
+node --test server/tests/*.test.mjs
 node scripts/prepare-assets.mjs --dry-run
 node scripts/prepare-assets.mjs
 node scripts/prepare-assets.mjs --check
@@ -67,16 +67,17 @@ npx wrangler d1 create orvantro-insights
 | 설정 | 필요한 실제 값 |
 | --- | --- |
 | `DB` 바인딩 | 이번 배포에 사용할 D1 데이터베이스 |
-| `ACCESS_TEAM_DOMAIN` | 사용자 계정의 Access 팀 도메인 |
-| `ACCESS_AUD` | 운영자용 Access 애플리케이션 audience |
-| `PREMIUM_ACCESS_AUD` | 팀 작업공간용 별도 애플리케이션 audience |
-| `AUTH_ALLOWLIST_EMAILS` | 통계 운영자로 허용한 정확한 이메일 |
+| `AUTH_PROVIDER` | `github` |
+| `AUTH_ORIGIN` | 실제 Worker HTTPS Origin, 끝 슬래시 없음 |
+| `GITHUB_CLIENT_ID` | 등록된 로그인 앱의 Client ID |
+| `AUTH_GITHUB_OWNER_ID` | 운영자 GitHub 계정의 변경되지 않는 숫자 ID |
 | `PUBLIC_STATS_ENABLED` | 처음에는 `false` 유지 |
 
 해시 비밀값은 안전한 비밀번호 생성기로 만든 32자 이상의 임의값을 Wrangler 비밀 입력으로 등록 명령 인수, 소스, 브라우저 JavaScript, 공유 로그에 넣지 않음
 
 ```powershell
 npx wrangler secret put ANALYTICS_HASH_SECRET
+npx wrangler secret put GITHUB_CLIENT_SECRET
 ```
 
 `wrangler.jsonc`, `.dev.vars*`, `.env*`, `.wrangler/`, 생성된 `public_assets/`는 Git에서 제외됨 배포 전 `git status`와 변경 내용을 확인하고 비밀값이 이미 추적된 파일에 들어가지 않았는지도 확인
@@ -92,28 +93,28 @@ npx wrangler d1 migrations list orvantro-insights --remote
 npx wrangler d1 migrations apply orvantro-insights --remote
 ```
 
-현재 마이그레이션은 `0001_analytics.sql`과 `0002_workspaces.sql`이며 번호 순서대로 모두 적용해야 함 기존 DB에 적용할 때는 먼저 복구 가능한 백업과 이전 배포를 확보하고 적용된 SQL 파일은 수정하지 않음
+현재 마이그레이션은 `0001_analytics.sql`, `0002_workspaces.sql`, `0003_github_login.sql`이며 번호 순서대로 모두 적용해야 함 기존 DB에 적용할 때는 먼저 복구 가능한 백업과 이전 배포를 확보하고 적용된 SQL 파일은 수정하지 않음
 
 명령은 [D1 마이그레이션 공식 안내](https://developers.cloudflare.com/d1/reference/migrations/)와 현재 Wrangler 도움말을 함께 확인 대상 DB를 잘못 선택한 상태에서 재시도하지 않음
 
-## 5 · 운영자와 작업공간 인증 분리
+## 5 · GitHub 로그인과 역할 확인
 
-Access 애플리케이션을 최소 두 개로 분리
+GitHub OAuth 앱의 callback URL을 실제 Worker의 `/auth/callback`로 등록하고 wildcard 및 Device Flow는 사용하지 않음
 
 | 용도 | 보호 경로 | 서버 검증 |
 | --- | --- | --- |
-| 통계 운영자 | `/admin*`, `/api/admin/*` | `ACCESS_AUD` JWT와 운영자 이메일 허용 목록 |
-| 팀 작업공간 | `/workspace*`, `/api/workspaces*` | `PREMIUM_ACCESS_AUD` JWT와 작업공간별 멤버·역할 |
+| 통계 운영자 | `/admin*`, `/api/admin/*` | 서버 세션과 고정된 운영자 GitHub 숫자 ID |
+| 팀 작업공간 | `/workspace*`, `/api/workspaces*` | 서버 세션과 작업공간별 멤버·역할 |
 
-두 audience 값은 달라야 함 일반 작업공간 사용자를 통계 운영자 허용 목록에 넣지 않으며 작업공간 토큰으로 운영자 API를 호출할 수 없어야 함
+요청 권한은 `user:email`이며 PKCE S256, 브라우저 쿠키에 연결된 일회용 state, 확인된 기본 이메일과 안정적인 계정 ID를 검증
 
-각 Access 정책은 필요한 사용자 또는 그룹만 허용 인증 실패를 해결하려고 `Everyone`, 우회 정책 또는 공유 비밀로 보호를 제거하지 않음
+운영자와 초대된 팀원만 로그인할 수 있고 새 작업공간은 운영자만 생성할 수 있음 GitHub 이메일·비밀번호·토큰을 로그인 화면에서 직접 받지 않음
 
-서버는 JWT 서명·발급자·audience·만료를 검증하며 이메일 헤더만 신뢰하지 않음 [Access JWT 검증 공식 안내](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
+GitHub access token과 refresh token은 저장하지 않음 임의 서버 세션의 해시만 D1에 보관하고 8시간 뒤 만료 로그인·로그아웃·데이터 변경은 동일 Origin 검증 적용
 
 `/collect`는 로그인 없는 수집 경로로 유지하되 등록된 사이트·Origin과 입력 스키마 검사 적용 `assets.run_worker_first: true`를 유지해 정적 `/admin/` 또는 `/workspace/` 경로로 인증을 우회할 수 없도록 함
 
-`workers_dev: false`, `preview_urls: false`를 유지하고 다른 공개 별칭·미리보기 URL로 운영자 자산이 노출되지 않는지 확인
+등록된 workers.dev 주소를 쓸 때 `workers_dev: true`, `preview_urls: false`를 유지하며 `AUTH_ORIGIN`이 실제 주소와 일치해야 함 다른 별칭에서 인증은 거부됨
 
 ## 6 · 서버 배포와 실제 합성 확인 1회
 

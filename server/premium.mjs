@@ -107,6 +107,7 @@ async function workspaceList(request, env, identity, now, payload) {
     return json({ identity, workspaces: records.map(row => workspaceRecord(row)), limits: LIMITS });
   }
   if (request.method !== 'POST') throw new HttpError(405, 'method_not_allowed');
+  if (env.AUTH_PROVIDER === 'github' && identity.subject !== `github:${env.AUTH_GITHUB_OWNER_ID}`) throw new HttpError(403, 'owner_required_to_create_workspace');
   exactObject(payload, ['name']);
   const id = crypto.randomUUID();
   const [created] = await batch(db, [

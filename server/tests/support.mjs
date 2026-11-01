@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFile } from 'node:fs/promises';
 
-const schema = (await Promise.all(['0001_analytics.sql', '0002_workspaces.sql'].map(file => readFile(new URL('../migrations/' + file, import.meta.url), 'utf8')))).join('\n');
+const schema = (await Promise.all(['0001_analytics.sql', '0002_workspaces.sql', '0003_github_login.sql'].map(file => readFile(new URL('../migrations/' + file, import.meta.url), 'utf8')))).join('\n');
 export const now = Date.parse('2026-11-01T10:00:00Z');
 const encoder = new TextEncoder();
 const keyPair = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);

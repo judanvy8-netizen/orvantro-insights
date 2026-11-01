@@ -9,12 +9,13 @@ This source does not provision an account, purchase a plan, create credentials o
 | Route | Access | Result |
 | --- | --- | --- |
 | `POST /collect` | Public, registered origin/site pair | Validated pageview receipt |
-| `GET /api/admin/summary?range=7&site=all` | Access JWT and operator email allowlist | Central aggregate report |
+| `GET /api/admin/summary?range=7&site=all` | Verified operator identity | Central aggregate report |
 | `GET /admin/` | Same operator checks | Operator assets from the `ASSETS` binding |
 | `GET /api/public/summary` | Disabled unless `PUBLIC_STATS_ENABLED=true` | Deliberately published aggregates only |
 | `GET /health` | Public | Process liveness only, not database or identity readiness |
-| `/api/workspaces*` | Separate Access application, then per-workspace membership | Cloud workspace, roles and scenario persistence |
-| `GET /workspace/` | Separate workspace Access application | Workspace UI from `ASSETS` |
+| `/api/workspaces*` | Verified identity, then per-workspace membership | Cloud workspace, roles and scenario persistence |
+| `GET /workspace/` | Verified team identity | Workspace UI from `ASSETS` |
+| `/auth/login`, `/auth/callback`, `/auth/logout` | GitHub OAuth and server session | Sign-in and session revocation |
 
 Collection payload must contain exactly the following keys
 
@@ -57,7 +58,27 @@ Measurement first/last receipt metadata per registered site remains after event 
 
 ## Operator security
 
-Set all of these configuration values before enabling operator access
+The selected deployment uses GitHub login without Cloudflare Zero Trust billing activation
+
+Set `AUTH_PROVIDER=github`, the exact HTTPS `AUTH_ORIGIN`, the registered `GITHUB_CLIENT_ID`, and the owner's immutable numeric `AUTH_GITHUB_OWNER_ID`
+
+Supply `GITHUB_CLIENT_SECRET` and `ANALYTICS_HASH_SECRET` only through Worker Secrets
+
+`GET /auth/login` displays a sign-in form and its same-origin POST starts GitHub OAuth with PKCE S256 and a browser-bound, ten-minute, single-use state
+
+The callback checks the authenticated GitHub numeric ID and the verified primary email using only `user:email` scope, then discards the provider tokens
+
+Only the pinned owner can administer analytics or create workspaces; other users need an existing invitation to enter team workspaces and receive only their assigned roles
+
+An eight-hour random session is stored as a hash in D1 and delivered only in a Secure, HttpOnly, SameSite=Lax host-only cookie
+
+`GET /auth/logout` is a confirmation page and its same-origin POST revokes the current session; API callers receive 401 rather than OAuth redirects
+
+The account's actual workers.dev hostname is permitted only when it exactly matches `AUTH_ORIGIN`; preview URLs remain disabled and all protected assets pass through the Worker first
+
+The legacy Access provider below is retained for separately approved deployments and is not required by the GitHub configuration
+
+For the optional legacy Access provider, set all of these configuration values
 
 - `ACCESS_TEAM_DOMAIN`: the actual Cloudflare Access team domain, for example `your-team.cloudflareaccess.com`
 - `ACCESS_AUD`: the audience tag from the actual Access application
@@ -85,7 +106,7 @@ The Worker maps only `/admin/`, `/admin/admin.js`, `/admin/admin.css`, `/workspa
 Run from the repository root with Node 24 or newer
 
 ```text
-node --test server/tests/worker.test.mjs server/tests/premium.test.mjs
+node --test server/tests/*.test.mjs
 ```
 
 Tests run the migration and prepared SQL against an in-memory SQLite database, and use locally generated RSA signatures to validate real JWT checks without contacting any identity provider
@@ -94,11 +115,11 @@ Tests run the migration and prepared SQL against an in-memory SQLite database, a
 
 ## Deployment preparation
 
-1. Verify the actual Cloudflare account remains on the approved free Workers, D1 and Access plans
+1. Verify the actual Cloudflare account remains on the approved free Workers and D1 plan without enabling paid or overage billing
 2. Create a D1 database and copy `wrangler.jsonc.example` to ignored `wrangler.jsonc`, replacing only actual returned identifiers
-3. Add the real custom-domain route and configure separate admin and workspace Access applications/policies
-4. Supply the hash secret using Wrangler's secret input, never in a shell argument or tracked file
-5. Apply both numbered SQL files in `migrations/` through D1 migrations before deploying
+3. Register the GitHub OAuth application with the exact Worker `/auth/callback` URL, no wildcard, and configure the owner numeric ID
+4. Supply the analytics hash and GitHub client secrets using Wrangler's secret input, never in a shell argument or tracked file
+5. Apply all three numbered SQL files in `migrations/` through D1 migrations before deploying
 6. Stage the operator and workspace assets under `../public_assets/admin/` and `../public_assets/workspace/`, then deploy using the reviewed configuration
 7. Verify unauthenticated operator denial, successful operator login, a controlled test event and explicit data deletion/cleanup before connecting production collectors
 8. Set the production collector endpoint only after the deployed origin and behavior have been verified
@@ -109,7 +130,7 @@ Free Workers/D1 exhaustion causes request/query failures rather than an automati
 
 Public aggregate statistics remain disabled until their exact intended disclosure is reviewed
 
-Workspace access also remains unavailable until `PREMIUM_ACCESS_AUD` is set to a real, separate Access application audience and its policy is intentionally configured
+For the GitHub provider, workspace access remains unavailable until the actual OAuth configuration is complete; if separately using Access, configure a distinct real `PREMIUM_ACCESS_AUD`
 
 Workspace features do not implement billing, a paid subscription entitlement, seller API ingestion or scheduled email delivery
 

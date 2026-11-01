@@ -3,11 +3,13 @@
   "name": "orvantro-insights-api",
   "main": "worker.mjs",
   "compatibility_date": "2026-11-01",
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
   "assets": {
     "directory": "../public_assets",
     "binding": "ASSETS",
+    "html_handling": "none",
+    "not_found_handling": "none",
     "run_worker_first": true
   },
   "d1_databases": [{
@@ -17,10 +19,10 @@
     "migrations_dir": "migrations"
   }],
   "vars": {
-    "ACCESS_TEAM_DOMAIN": "REPLACE_WITH_TEAM.cloudflareaccess.com",
-    "ACCESS_AUD": "REPLACE_WITH_ACCESS_APPLICATION_AUDIENCE",
-    "PREMIUM_ACCESS_AUD": "REPLACE_WITH_SEPARATE_WORKSPACE_ACCESS_AUDIENCE",
-    "AUTH_ALLOWLIST_EMAILS": "REPLACE_WITH_OPERATOR_EMAIL",
+    "AUTH_PROVIDER": "github",
+    "AUTH_ORIGIN": "https://REPLACE_WITH_ACTUAL_WORKER_HOST",
+    "GITHUB_CLIENT_ID": "REPLACE_WITH_REGISTERED_OAUTH_CLIENT_ID",
+    "AUTH_GITHUB_OWNER_ID": "REPLACE_WITH_OWNER_NUMERIC_GITHUB_ID",
     "PUBLIC_STATS_ENABLED": "false"
   },
   "triggers": { "crons": ["15 * * * *"] },

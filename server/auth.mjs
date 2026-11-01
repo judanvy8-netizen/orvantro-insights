@@ -1,4 +1,5 @@
 import { HttpError, readLimited } from './http.mjs';
+import { verifyGithubSession } from './github-auth.mjs';
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder('utf-8', { fatal: true });
 const jwksCache = new Map();
@@ -65,6 +66,7 @@ async function fetchJwks(issuer, fetcher, now) {
 }
 
 export async function verifyIdentity(request, env, now = Date.now(), fetcher = fetch, audienceKey = 'ACCESS_AUD') {
+  if (env.AUTH_PROVIDER === 'github') return verifyGithubSession(request, env, now);
   if (!['ACCESS_AUD', 'PREMIUM_ACCESS_AUD'].includes(audienceKey)) throw new HttpError(503, 'identity_not_configured');
   const config = authConfig(env, audienceKey);
   const token = request.headers.get('Cf-Access-Jwt-Assertion');
@@ -101,6 +103,11 @@ export async function verifyIdentity(request, env, now = Date.now(), fetcher = f
 }
 
 export async function authorize(request, env, now = Date.now(), fetcher = fetch) {
+  if (env.AUTH_PROVIDER === 'github') {
+    const identity = await verifyGithubSession(request, env, now);
+    if (identity.subject !== `github:${env.AUTH_GITHUB_OWNER_ID}`) throw new HttpError(403, 'operator_not_allowed');
+    return identity;
+  }
   const emails = String(env.AUTH_ALLOWLIST_EMAILS || '').split(',').map(email => email.trim().toLowerCase()).filter(Boolean);
   if (!emails.length || emails.some(email => !/^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/.test(email))) {
     throw new HttpError(503, 'admin_not_configured');
