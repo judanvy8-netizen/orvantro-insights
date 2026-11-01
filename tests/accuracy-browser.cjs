@@ -2,7 +2,7 @@ const { chromium }=require('playwright');
 const fs=require('node:fs');const path=require('node:path');const http=require('node:http');const assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..');const results=path.join(root,'review');fs.mkdirSync(results,{recursive:true});
 (async()=>{
- const server=http.createServer((req,res)=>{const name=req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0].slice(1); if(!['index.html','insights.js','insights.css','analytics-config.js','orvantro-analytics.js'].includes(name)){res.writeHead(404);return res.end();}res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,name)));});
+ const server=http.createServer((req,res)=>{const name=req.url.split('?')[0]==='/'?'index.html':req.url.split('?')[0].slice(1); if(!['index.html','insights.js','insights.css','visual.css','analytics-config.js','orvantro-analytics.js'].includes(name)){res.writeHead(404);return res.end();}res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,name)));});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}`;
  let browser;
  const launchOptions={headless:true,chromiumSandbox:true};
@@ -15,7 +15,7 @@ const root=path.resolve(__dirname,'..');const results=path.join(root,'review');f
  assert.ok(chart.width>0&&chart.height>0);assert.equal(chart.hidden,true);
  assert.equal(await page.locator('#trendEmpty').isVisible(),false);
  await page.screenshot({path:path.join(results,'00-sample-trend.png'),fullPage:true});
- await page.selectOption('#filterCountry','JP');await page.click('#btnEnableLocal');await page.waitForFunction(()=>document.querySelector('#kpiPageviews').textContent==='1');assert.equal(await page.inputValue('#filterCountry'),'all');
+ await page.selectOption('#filterCountry','JP');await page.click('#local-settings summary');await page.click('#btnEnableLocal');await page.waitForFunction(()=>document.querySelector('#kpiPageviews').textContent==='1');assert.equal(await page.inputValue('#filterCountry'),'all');
  for(let i=0;i<2;i++){await page.click('#btnUseSample');await page.selectOption('#filterCountry','JP');await page.click('#btnLive');await page.waitForFunction(()=>document.querySelector('#kpiPageviews').textContent==='1');assert.equal(await page.inputValue('#filterCountry'),'all');}
  await page.screenshot({path:path.join(results,'01-local-after-sample.png'),fullPage:true});console.log('PASS sample → country JP → local data, repeated twice; 1 local PV retained');
  const row=(x)=>({t:Date.now()-1000,type:'pageview',site:'orvantro',...x});

@@ -354,7 +354,8 @@
     if (!series.length) return false;
 
     var max = Math.max.apply(null, series.map(function (s) { return s.value; })) || 1;
-    var pad = 24 * (window.devicePixelRatio || 1);
+    max = Math.ceil(max / 3) * 3;
+    var pad = 36 * (window.devicePixelRatio || 1);
     var plotW = w - pad * 2;
     var plotH = h - pad * 2;
 
@@ -364,7 +365,7 @@
       return { x: x, y: y };
     }
 
-    ctx.strokeStyle = 'rgba(148,185,210,0.12)';
+    ctx.strokeStyle = 'rgba(148,185,210,0.16)';
     ctx.lineWidth = 1;
     for (var g = 0; g < 4; g++) {
       var gy = pad + (plotH / 3) * g;
@@ -376,7 +377,7 @@
 
     var split = hist.length;
     ctx.lineWidth = 2.5 * (window.devicePixelRatio || 1);
-    ctx.strokeStyle = '#2ec4b6';
+    ctx.strokeStyle = '#4ec1f0';
     ctx.beginPath();
     for (var i = 0; i < split; i++) {
       var p = xy(i, series[i].value);
@@ -400,10 +401,28 @@
 
     for (var k = 0; k < series.length; k++) {
       var r = xy(k, series[k].value);
-      ctx.fillStyle = series[k].estimate ? '#e8b84a' : '#5ec8f0';
+      ctx.fillStyle = series[k].estimate ? '#e8b84a' : '#4ec1f0';
       ctx.beginPath();
       ctx.arc(r.x, r.y, 3.2 * (window.devicePixelRatio || 1), 0, Math.PI * 2);
       ctx.fill();
+    }
+    // Keep chart values and dates readable; the underlying metrics are unchanged.
+    if (typeof ctx.fillText === 'function') {
+      var dpr = window.devicePixelRatio || 1;
+      ctx.font = (10 * dpr) + 'px Arial, sans-serif';
+      ctx.fillStyle = '#9bb1c8';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      for (var tick = 0; tick < 4; tick++) {
+        ctx.fillText(String(Math.round(max * (1 - tick / 3))), pad - 9 * dpr, pad + plotH * tick / 3);
+      }
+      ctx.textBaseline = 'top';
+      for (var label = 0; label < Math.min(4, series.length); label++) {
+        var index = Math.round(label * (series.length - 1) / (Math.min(4, series.length) - 1 || 1));
+        var point = xy(index, 0);
+        ctx.textAlign = label === 0 ? 'left' : label === Math.min(4, series.length) - 1 ? 'right' : 'center';
+        ctx.fillText(String(series[index].day).slice(5).replace('-', '/'), point.x, h - pad + 12 * dpr);
+      }
     }
     return true;
   }
@@ -627,7 +646,7 @@
     state.mode = 'empty';
     state.events = [];
     setStatus(
-      '로컬 기록이 없습니다. 기록을 켜거나 JSON을 가져올 수 있습니다. 샘플은 위의 「기록 없이 샘플 둘러보기」를 눌렀을 때만 표시합니다.',
+      '로컬 기록이 없습니다. 기록을 켜거나 JSON을 가져올 수 있습니다. 샘플은 위의 「샘플로 둘러보기」를 눌렀을 때만 표시합니다.',
       'warn',
       false
     );
